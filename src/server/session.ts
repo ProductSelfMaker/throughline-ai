@@ -1,5 +1,6 @@
 // src/server/session.ts
 import { Message, AgentRunner, ScribeResult } from '../domain/types';
+import { buildFlowPrompt } from '../domain/flow-prompt';
 import { SpecStore } from '../core/spec-store';
 import { ScribeEngine } from '../core/scribe-engine';
 import { Debouncer } from './debouncer';
@@ -48,6 +49,12 @@ export class Session {
 
   readSpec(): Promise<string> {
     return this.store.read();
+  }
+
+  /** Generate a fresh mermaid user-flow from the current spec (one-shot AI call). */
+  async generateFlow(signal?: AbortSignal): Promise<string> {
+    const spec = await this.readSpec();
+    return this.runner.complete(buildFlowPrompt(spec), signal);
   }
 
   /** Append a user turn, stream the assistant reply, then schedule a debounced scribe. */

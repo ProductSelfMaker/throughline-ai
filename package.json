@@ -3,7 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "bin": { "throughline": "bin/throughline.mjs" },
+  "bin": {
+    "throughline": "bin/throughline.mjs"
+  },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
@@ -21,6 +23,7 @@
     "chokidar": "^4.0.1",
     "diff": "^7.0.0",
     "hono": "^4.12.23",
+    "mermaid": "^11.15.0",
     "open": "^11.0.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",

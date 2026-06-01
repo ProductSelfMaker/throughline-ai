@@ -56,4 +56,16 @@ describe('Session', () => {
     expect(await store.read()).toContain('- [ ] 소셜 로그인 <!-- id: feat-');
     expect(events.some((e) => e.event === 'spec-updated')).toBe(true);
   });
+
+  it('generateFlow returns the runner completion for the current spec', async () => {
+    const store = new SpecStore(join(dir, 'spec.md'));
+    await store.write('## ✅ 핵심 기능\n- [ ] 소셜 로그인\n');
+    const runner = new FakeAgentRunner({
+      completeReply: (prompt) =>
+        prompt.includes('소셜 로그인') ? 'flowchart TD\n  로그인-->홈' : 'EMPTY',
+    });
+    session = new Session({ store, runner });
+
+    expect(await session.generateFlow()).toBe('flowchart TD\n  로그인-->홈');
+  });
 });

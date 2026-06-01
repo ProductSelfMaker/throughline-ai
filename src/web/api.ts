@@ -29,3 +29,13 @@ export async function sendChat(
     onToken(decoder.decode(value, { stream: true }));
   }
 }
+
+/** Fetch a freshly generated mermaid user-flow for the current spec. */
+export async function fetchFlow(): Promise<string> {
+  const res = await fetch('/api/flow');
+  const data = (await res.json()) as { mermaid?: string; error?: string };
+  if (!res.ok || data.error) {
+    throw new Error(data.error ?? `flow request failed (${res.status})`);
+  }
+  return data.mermaid ?? '';
+}

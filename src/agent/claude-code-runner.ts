@@ -79,4 +79,9 @@ export class ClaudeCodeRunner implements AgentRunner {
     );
     return stripCodeFence(text);
   }
+
+  async complete(prompt: string, signal?: AbortSignal): Promise<string> {
+    const text = await collectAssistantText(prompt, this.options.cwd, undefined, signal);
+    return stripCodeFence(text);
+  }
 }

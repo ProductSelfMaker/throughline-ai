@@ -53,3 +53,34 @@ describe('createApp POST /api/chat', () => {
     expect(await store.read()).toContain('## ✅ 핵심 기능');
   });
 });
+
+describe('createApp GET /api/flow', () => {
+  it('returns { mermaid } from the session', async () => {
+    const store = new SpecStore(join(dir, 'spec.md'));
+    await store.write('## ✅ 핵심 기능\n- [ ] 소셜 로그인\n');
+    const runner = new FakeAgentRunner({ completeReply: 'flowchart TD\n  A-->B' });
+    session = new Session({ store, runner });
+    const app = createApp(session);
+
+    const res = await app.request('/api/flow');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ mermaid: 'flowchart TD\n  A-->B' });
+  });
+
+  it('returns { error } with 500 when generation throws', async () => {
+    const store = new SpecStore(join(dir, 'spec.md'));
+    const runner = {
+      converse: async () => '',
+      scribe: async () => '',
+      complete: async () => {
+        throw new Error('model down');
+      },
+    };
+    session = new Session({ store, runner });
+    const app = createApp(session);
+
+    const res = await app.request('/api/flow');
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: 'model down' });
+  });
+});
