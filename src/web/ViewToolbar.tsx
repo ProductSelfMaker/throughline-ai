@@ -19,7 +19,9 @@ export function ViewToolbar({
       {VIEWS.map((v) => (
         <button
           key={v.id}
+          type="button"
           className={`view-btn ${active === v.id ? 'active' : ''}`}
+          aria-pressed={active === v.id}
           onClick={() => onToggle(v.id)}
         >
           <span aria-hidden>{v.icon}</span> {v.label}
