@@ -62,4 +62,34 @@ describe('SyncEngine.syncNow', () => {
     const engine = new SyncEngine(store, runner, reader as any);
     expect(await engine.syncNow()).toBeNull();
   });
+
+  it('emits "rejected" and returns null when the runner throws', async () => {
+    const store = new SpecStore(join(dir, 'spec.md'));
+    await store.write('## 🎯 요약\n원본\n');
+    const runner = new FakeAgentRunner({ completeReply: () => { throw new Error('model down'); } });
+    const reader = fakeReader([
+      { entries: [{ role: 'user', text: 'x' }], transcriptText: '사용자: x', gitDiff: '', hasNew: true, newState: { sessionFile: 's', byteOffset: 1 } },
+    ]);
+    const engine = new SyncEngine(store, runner, reader as any);
+    let errors: string[] | undefined;
+    engine.on('rejected', (e: string[]) => (errors = e));
+    expect(await engine.syncNow()).toBeNull();
+    expect(errors).toEqual(['model down']);
+    expect(await store.read()).toBe('## 🎯 요약\n원본\n');
+  });
+
+  it('emits "rejected" and leaves the file untouched on invalid output', async () => {
+    const store = new SpecStore(join(dir, 'spec.md'));
+    await store.write('## 🎯 요약\n원본\n');
+    const runner = new FakeAgentRunner({ completeReply: '미정 섹션 없는 깨진 문서' });
+    const reader = fakeReader([
+      { entries: [{ role: 'user', text: 'x' }], transcriptText: '사용자: x', gitDiff: '', hasNew: true, newState: { sessionFile: 's', byteOffset: 1 } },
+    ]);
+    const engine = new SyncEngine(store, runner, reader as any);
+    let rejected = false;
+    engine.on('rejected', () => (rejected = true));
+    expect(await engine.syncNow()).toBeNull();
+    expect(rejected).toBe(true);
+    expect(await store.read()).toBe('## 🎯 요약\n원본\n');
+  });
 });

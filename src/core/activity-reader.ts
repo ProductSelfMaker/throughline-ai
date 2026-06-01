@@ -39,8 +39,13 @@ async function defaultGitDiff(cwd: string): Promise<string> {
   }
 }
 
+/** A git diff counts as "new" only if it changed from the last read (not the initial snapshot). */
+function diffIsNew(gitDiff: string, lastDiff: string | undefined): boolean {
+  return lastDiff !== undefined && gitDiff !== lastDiff && gitDiff.trim().length > 0;
+}
+
 export class ActivityReader {
-  private projectDir: string;
+  readonly projectDir: string;
   private runGitDiff: (cwd: string) => Promise<string>;
 
   constructor(private cwd: string, deps: ActivityReaderDeps = {}) {
@@ -66,16 +71,13 @@ export class ActivityReader {
   async readActivity(state: ActivityState): Promise<ActivityResult> {
     const sessionFile = await this.activeSession();
     const gitDiff = await this.runGitDiff(this.cwd);
-    // Only count the diff as "new" if it changed since the last read
-    const diffChanged = gitDiff !== (state.lastDiff ?? undefined ? state.lastDiff : undefined) &&
-      gitDiff !== state.lastDiff;
 
     if (!sessionFile) {
       return {
         entries: [],
         transcriptText: '',
         gitDiff,
-        hasNew: false,
+        hasNew: diffIsNew(gitDiff, state.lastDiff),
         newState: { sessionFile: null, byteOffset: 0, lastDiff: gitDiff },
       };
     }
@@ -90,8 +92,7 @@ export class ActivityReader {
       .map((e) => `${e.role === 'user' ? '사용자' : 'AI'}: ${e.text}`)
       .join('\n');
 
-    // hasNew: new transcript entries OR git diff changed from last read
-    const hasNew = entries.length > 0 || (gitDiff !== state.lastDiff && gitDiff.trim().length > 0 && state.lastDiff !== undefined);
+    const hasNew = entries.length > 0 || diffIsNew(gitDiff, state.lastDiff);
     return {
       entries,
       transcriptText,

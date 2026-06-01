@@ -28,7 +28,6 @@ export class Session {
   private cwd: string;
   private debouncer: Debouncer;
   private watcher: FSWatcher | null = null;
-  private lastMd: string | null = null;
 
   constructor(deps: SessionDeps) {
     this.store = deps.store;
@@ -39,7 +38,6 @@ export class Session {
     this.debouncer = new Debouncer(deps.debounceMs ?? 10_000);
 
     this.engine.on('updated', (r: ScribeResult) => {
-      this.lastMd = r.md;
       this.broadcaster.broadcast('spec-updated', r);
     });
   }
@@ -60,7 +58,9 @@ export class Session {
   /** Begin watching the repo + Claude Code transcript; debounce → sync. */
   start(): void {
     if (this.watcher) return;
-    this.watcher = chokidar.watch(this.cwd, {
+    // Watch both the repo (code changes) and the Claude Code transcript dir
+    // (pure conversation, no file save) so either kind of activity triggers a sync.
+    this.watcher = chokidar.watch([this.cwd, this.reader.projectDir], {
       ignoreInitial: true,
       ignored: (p: string) =>
         /(^|\/)(\.git|node_modules|dist|docs|\.superpowers)(\/|$)/.test(p) || p.endsWith('/spec.md'),
