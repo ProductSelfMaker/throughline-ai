@@ -38,6 +38,8 @@ export interface AgentRunner {
     transcript: Message[],
     signal?: AbortSignal,
   ): Promise<string>;
+  /** Generic one-shot completion for a prompt (used for derived artifacts like the user-flow diagram). */
+  complete(prompt: string, signal?: AbortSignal): Promise<string>;
 }
 
 /** The three fixed "spine" sections that must always be present (hybrid structure). */

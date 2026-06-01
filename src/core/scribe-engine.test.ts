@@ -70,6 +70,7 @@ describe('ScribeEngine.runNow', () => {
       scribe: async () => {
         throw new Error('network down');
       },
+      complete: async () => '',
     };
     const engine = new ScribeEngine(store, throwingRunner);
 

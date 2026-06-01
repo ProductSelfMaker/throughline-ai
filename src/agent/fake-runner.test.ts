@@ -19,4 +19,12 @@ describe('FakeAgentRunner', () => {
       '## 🎯 요약\n## ✅ 핵심 기능\n- [ ] 새 기능',
     );
   });
+
+  it('returns a scripted complete() reply, supporting a function form', async () => {
+    const runner = new FakeAgentRunner({ completeReply: 'flowchart TD\n  A-->B' });
+    expect(await runner.complete('any prompt')).toBe('flowchart TD\n  A-->B');
+
+    const dynamic = new FakeAgentRunner({ completeReply: (p) => `len:${p.length}` });
+    expect(await dynamic.complete('abc')).toBe('len:3');
+  });
 });
