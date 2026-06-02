@@ -19,6 +19,9 @@ class FakeReader implements ActivityReader {
   async readNew(): Promise<ActivityBatch> { return this.batch; }
   async currentOffsets(): Promise<Record<string, number>> { return this.offsets; }
   async readRecent(): Promise<string> { return this.recent; }
+  async analyze() {
+    return { tokens: { total: 0, input: 0, output: 0, cacheRead: 0, cacheCreate: 0, turns: 0, tools: 0, perDay: [] }, history: [], approx: false };
+  }
   watch(): () => void { return () => {}; }
 }
 const completer = (reply: string) => ({ complete: async () => reply });
@@ -71,6 +74,7 @@ describe('Session (observer)', () => {
     expect(await store.read()).toContain('## 로그인');
     expect(await store.read()).not.toContain('옛 내용');
     expect(await ingest.load()).toEqual({ '/x/s1.jsonl': 77 });
+    expect((await session.readDecisions()).trim().length).toBeGreaterThan(0); // decisions regenerated too
   });
 
   it('curate applies an instruction and broadcasts', async () => {

@@ -26,6 +26,35 @@ export interface ActivityBatch {
   advanced: Record<string, number>;
 }
 
+/** One work session, summarized for the history view. */
+export interface SessionSummary {
+  id: string;
+  title: string;
+  time: number; // last-activity epoch ms
+  messages: number;
+  tools: number;
+  tokens: number;
+}
+
+/** Aggregate token usage for the tokens view. */
+export interface TokenStats {
+  total: number;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheCreate: number;
+  turns: number;
+  tools: number;
+  perDay: { date: string; total: number }[];
+}
+
+/** Derived analytics over recent session logs (history + tokens views). */
+export interface Analytics {
+  tokens: TokenStats;
+  history: SessionSummary[];
+  approx: boolean; // true if the byte budget truncated the scan
+}
+
 /** Reads new agent activity for a project and watches for more. */
 export interface ActivityReader {
   readNew(checkpoint: Record<string, number>): Promise<ActivityBatch>;
@@ -33,6 +62,8 @@ export interface ActivityReader {
   currentOffsets(): Promise<Record<string, number>>;
   /** Recent activity (last `days`, capped to `maxChars`) — used for a full rebuild. */
   readRecent(days: number, maxChars: number): Promise<string>;
+  /** Derived analytics (history + tokens) over recent logs, byte-bounded. */
+  analyze(days: number, maxBytes: number): Promise<Analytics>;
   watch(onActivity: () => void): () => void;
 }
 

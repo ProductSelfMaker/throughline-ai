@@ -104,6 +104,28 @@ describe('SessionLogReader.readRecent', () => {
   });
 });
 
+describe('SessionLogReader.analyze', () => {
+  it('aggregates tokens + per-session history, excluding agent-*', async () => {
+    const asst = (text: string, usage: object, tool?: { name: string; input: unknown }) =>
+      JSON.stringify({ type: 'assistant', timestamp: '2026-06-02T00:00:00.000Z', message: { role: 'assistant', usage, content: [
+        ...(text ? [{ type: 'text', text }] : []),
+        ...(tool ? [{ type: 'tool_use', name: tool.name, input: tool.input }] : []),
+      ] } }) + '\n';
+    await writeFile(join(sessionDir, 's1.jsonl'),
+      userLine('로그인 만들어') +
+      asst('했어요', { input_tokens: 100, output_tokens: 20, cache_read_input_tokens: 5, cache_creation_input_tokens: 2 }, { name: 'Write', input: { file_path: 'a.tsx' } }));
+    await writeFile(join(sessionDir, 'agent-z.jsonl'), userLine('서브'));
+
+    const a = await new SessionLogReader({ cwd: CWD, home }).analyze(365, 64 * 1024 * 1024);
+    expect(a.tokens.total).toBe(127);
+    expect(a.tokens.input).toBe(100);
+    expect(a.tokens.turns).toBe(1);
+    expect(a.tokens.tools).toBe(1);
+    expect(a.history).toHaveLength(1); // agent-* excluded
+    expect(a.history[0]).toMatchObject({ title: '로그인 만들어', messages: 2, tools: 1, tokens: 127 });
+  });
+});
+
 describe('SessionLogReader.currentOffsets', () => {
   it('returns byte sizes for session files, excluding agent-*', async () => {
     const s = join(sessionDir, 's1.jsonl');

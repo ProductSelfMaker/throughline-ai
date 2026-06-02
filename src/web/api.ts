@@ -1,5 +1,15 @@
 // src/web/api.ts
+import type { Analytics } from '../domain/types';
+
 export type SpecUpdate = { md: string; changedLines: number[] };
+export type { Analytics };
+
+/** Live history + token analytics over recent session logs. */
+export async function fetchAnalytics(): Promise<Analytics> {
+  const res = await fetch('/api/analytics');
+  if (!res.ok) throw new Error(`analytics failed (${res.status})`);
+  return res.json();
+}
 
 /** Subscribe to live PRD updates over SSE. */
 export function subscribeSpec(onSpec: (u: SpecUpdate) => void): () => void {
@@ -18,8 +28,16 @@ export async function curate(instruction: string): Promise<void> {
   if (!res.ok) throw new Error(`curate failed (${res.status})`);
 }
 
-/** Reset & re-organize: rebuild the PRD from a bounded window of recent activity. */
+/** Reset & re-organize: rebuild the doc + decisions from recent activity. */
 export async function rebuild(): Promise<void> {
   const res = await fetch('/api/rebuild', { method: 'POST' });
   if (!res.ok) throw new Error(`rebuild failed (${res.status})`);
+}
+
+/** The latest generated decisions doc ('' if none). */
+export async function fetchDecisions(): Promise<string> {
+  const res = await fetch('/api/decisions');
+  if (!res.ok) return '';
+  const data = (await res.json()) as { md?: string };
+  return data.md ?? '';
 }

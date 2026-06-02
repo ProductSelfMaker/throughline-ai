@@ -19,6 +19,10 @@ export function createApp(session: Session): Hono {
     return c.json({ ok: true });
   });
 
+  app.get('/api/analytics', async (c) => c.json(await session.analytics()));
+
+  app.get('/api/decisions', async (c) => c.json({ md: await session.readDecisions() }));
+
   app.get('/api/events', (c) => {
     return streamSSE(c, async (stream) => {
       const current = await session.readSpec();

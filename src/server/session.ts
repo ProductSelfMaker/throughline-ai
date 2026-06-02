@@ -1,7 +1,10 @@
 // src/server/session.ts
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { ActivityReader, DEFAULT_SPEC } from '../domain/types';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { ActivityReader, Analytics, DEFAULT_SPEC } from '../domain/types';
 import { SpecStore } from '../core/spec-store';
 import { IngestStore } from '../core/ingest-store';
 import { Debouncer } from './debouncer';
@@ -9,6 +12,7 @@ import { Broadcaster } from './broadcaster';
 import { buildFlowPrompt } from '../domain/flow-prompt';
 import { buildSyncPrompt } from '../domain/sync-prompt';
 import { buildCuratePrompt } from '../domain/curate-prompt';
+import { buildDecisionsPrompt } from '../domain/decisions-prompt';
 import { applySpecUpdate } from '../core/apply-spec-update';
 
 const execFileP = promisify(execFile);
@@ -16,6 +20,10 @@ const execFileP = promisify(execFile);
 // Bounds for a full rebuild — re-scan recent activity only (never the whole history).
 const REBUILD_DAYS = 14;
 const REBUILD_MAX_CHARS = 40_000;
+
+// Bounds for the (live) history/tokens analytics scan.
+const ANALYTICS_DAYS = 30;
+const ANALYTICS_MAX_BYTES = 64 * 1024 * 1024;
 
 async function defaultGitDiff(cwd: string): Promise<string> {
   try {
@@ -52,6 +60,7 @@ export class Session {
   private cwd: string;
   private debouncer: Debouncer;
   private gitDiff: (cwd: string) => Promise<string>;
+  private decisionsPath: string;
   private checkpoint: Record<string, number> = {};
   private unwatch?: () => void;
 
@@ -63,6 +72,18 @@ export class Session {
     this.cwd = deps.cwd;
     this.debouncer = new Debouncer(deps.debounceMs ?? 8000);
     this.gitDiff = deps.gitDiff ?? defaultGitDiff;
+    this.decisionsPath = join(deps.cwd, '.throughline', 'decisions.md');
+  }
+
+  /** The latest generated decisions doc ('' if none yet). */
+  async readDecisions(): Promise<string> {
+    try { return existsSync(this.decisionsPath) ? await readFile(this.decisionsPath, 'utf8') : ''; }
+    catch { return ''; }
+  }
+
+  private async writeDecisions(md: string): Promise<void> {
+    await mkdir(dirname(this.decisionsPath), { recursive: true });
+    await writeFile(this.decisionsPath, md, 'utf8');
   }
 
   /** Load the checkpoint; on first run observe from "now" (a long-lived project's
@@ -80,6 +101,11 @@ export class Session {
 
   readSpec(): Promise<string> {
     return this.store.read();
+  }
+
+  /** Live history + token analytics over recent session logs. */
+  analytics(): Promise<Analytics> {
+    return this.reader.analyze(ANALYTICS_DAYS, ANALYTICS_MAX_BYTES);
   }
 
   async generateFlow(signal?: AbortSignal): Promise<string> {
@@ -120,19 +146,32 @@ export class Session {
   /** Reset & re-organize: discard the current PRD and rebuild it from a bounded
    *  window of recent activity. Then resume incremental ingest from "now". */
   async rebuild(): Promise<void> {
-    let next = DEFAULT_SPEC;
+    const excerpt = await this.reader.readRecent(REBUILD_DAYS, REBUILD_MAX_CHARS).catch(() => '');
+    const diff = excerpt.trim() ? await this.gitDiff(this.cwd) : '';
+
+    // product doc — reset to a clean skeleton, then rebuild from recent activity
+    let nextDoc = DEFAULT_SPEC;
     try {
-      const excerpt = await this.reader.readRecent(REBUILD_DAYS, REBUILD_MAX_CHARS);
       if (excerpt.trim()) {
-        const diff = await this.gitDiff(this.cwd);
         const raw = await this.runner.complete(buildSyncPrompt(DEFAULT_SPEC, excerpt, diff));
-        if (raw.trim()) next = raw;
+        if (raw.trim()) nextDoc = raw;
       }
     } catch {
-      next = DEFAULT_SPEC; // on failure, at least reset to a clean skeleton
+      nextDoc = DEFAULT_SPEC;
     }
     const previous = await this.store.read();
-    const applied = await applySpecUpdate(this.store, next, previous);
+    const applied = await applySpecUpdate(this.store, nextDoc, previous);
+
+    // decisions — regenerate from the same recent activity (best-effort)
+    try {
+      if (excerpt.trim()) {
+        const dec = await this.runner.complete(buildDecisionsPrompt(excerpt));
+        if (dec.trim()) await this.writeDecisions(dec);
+      }
+    } catch {
+      // keep the previous decisions doc
+    }
+
     this.checkpoint = await this.reader.currentOffsets();
     await this.ingest.save(this.checkpoint);
     if (applied.ok) this.broadcaster.broadcast('spec-updated', applied.result);

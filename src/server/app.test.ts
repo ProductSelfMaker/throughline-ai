@@ -13,6 +13,9 @@ const idleReader: ActivityReader = {
   async readNew() { return { excerpt: '', advanced: {} }; },
   async currentOffsets() { return {}; },
   async readRecent() { return ''; },
+  async analyze() {
+    return { tokens: { total: 0, input: 0, output: 0, cacheRead: 0, cacheCreate: 0, turns: 0, tools: 0, perDay: [] }, history: [], approx: false };
+  },
   watch() { return () => {}; },
 };
 
@@ -57,6 +60,26 @@ describe('POST /api/rebuild', () => {
     session = mk(PRD);
     const res = await createApp(session).request('/api/rebuild', { method: 'POST' });
     expect(await res.json()).toEqual({ ok: true });
+  });
+});
+
+describe('GET /api/decisions', () => {
+  it('returns the decisions doc ("" when none yet)', async () => {
+    session = mk();
+    const res = await createApp(session).request('/api/decisions');
+    expect(await res.json()).toEqual({ md: '' });
+  });
+});
+
+describe('GET /api/analytics', () => {
+  it('returns tokens + history', async () => {
+    session = mk();
+    const res = await createApp(session).request('/api/analytics');
+    expect(await res.json()).toEqual({
+      tokens: { total: 0, input: 0, output: 0, cacheRead: 0, cacheCreate: 0, turns: 0, tools: 0, perDay: [] },
+      history: [],
+      approx: false,
+    });
   });
 });
 

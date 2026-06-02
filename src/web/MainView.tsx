@@ -1,11 +1,14 @@
 // src/web/MainView.tsx
 // Primary region: wordmark + "다시 정리" (reset & rebuild) on top (no header bar);
-// then the active view. 문서 renders the live PRD; other views are placeholders.
+// then the active view. 문서 = live product doc; 히스토리/토큰 = live analytics;
+// 의사결정/목업 = placeholders for now.
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { rebuild } from './api';
-import { Icons } from './icons';
+import { rebuild, type Analytics } from './api';
+import { HistoryView } from './HistoryView';
+import { TokensView } from './TokensView';
+import { DecisionsView } from './DecisionsView';
 import type { ViewId } from './ViewRail';
 
 /** Drop a leading YAML frontmatter block so it doesn't render as a stray heading. */
@@ -14,15 +17,17 @@ function stripFrontmatter(md: string): string {
   return m ? md.slice(m[0].length) : md;
 }
 
-const PLACEHOLDER: Record<ViewId, string> = {
-  doc: '',
-  history: '히스토리는 곧 제공됩니다.',
-  decisions: '의사결정 흐름은 곧 제공됩니다.',
-  tokens: '토큰 사용량 분석은 곧 제공됩니다.',
-  mockup: '목업 생성은 곧 제공됩니다.',
-};
-
-export function MainView({ activeView, md }: { activeView: ViewId; md: string }) {
+export function MainView({
+  activeView,
+  md,
+  analytics,
+  analyticsLoading,
+}: {
+  activeView: ViewId;
+  md: string;
+  analytics: Analytics | null;
+  analyticsLoading: boolean;
+}) {
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -39,8 +44,10 @@ export function MainView({ activeView, md }: { activeView: ViewId; md: string })
       <div className="tl-toprow">
         <span className="wm">Throughline</span>
         <span className="sp" />
-        <button className="tl-rebtn" type="button" onClick={() => setConfirm(true)} title="최근 기록으로 문서를 새로 정리">
-          {Icons.refresh}다시 정리
+        <button className="tl-rebtn" type="button" onClick={() => setConfirm(true)} title="최근 기록으로 모든 페이지를 새로 정리">
+          {/* refresh icon */}
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.3M21 4v4h-4" /></svg>
+          다시 정리
         </button>
       </div>
 
@@ -55,8 +62,16 @@ export function MainView({ activeView, md }: { activeView: ViewId; md: string })
             )}
           </div>
         </div>
+      ) : activeView === 'history' ? (
+        <HistoryView analytics={analytics} loading={analyticsLoading} />
+      ) : activeView === 'tokens' ? (
+        <TokensView analytics={analytics} loading={analyticsLoading} />
+      ) : activeView === 'decisions' ? (
+        <DecisionsView />
       ) : (
-        <div className="tl-placeholder-wrap"><p className="tl-placeholder">{PLACEHOLDER[activeView]}</p></div>
+        <div className="tl-placeholder-wrap">
+          <p className="tl-placeholder">목업 생성은 곧 제공됩니다 (별도 버튼).</p>
+        </div>
       )}
 
       {confirm ? (
@@ -64,7 +79,7 @@ export function MainView({ activeView, md }: { activeView: ViewId; md: string })
           <div className="tl-modal" onClick={(e) => e.stopPropagation()}>
             <div className="tl-modal-title">전체 다시 정리</div>
             <p className="tl-modal-body">
-              현재 문서 내용이 <b>사라지고</b>, 최근 기록(약 14일)을 다시 분석해 새로 정리합니다. 계속할까요?
+              현재 문서 내용이 <b>사라지고</b>, 최근 기록(약 14일)을 다시 분석해 모든 페이지를 새로 정리합니다. 계속할까요?
             </p>
             <div className="tl-modal-actions">
               <button className="tl-btn-ghost" type="button" disabled={busy} onClick={() => setConfirm(false)}>취소</button>

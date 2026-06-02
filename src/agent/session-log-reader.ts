@@ -1,10 +1,17 @@
 // src/agent/session-log-reader.ts
 import { readdir, stat, open } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, createReadStream } from 'node:fs';
+import { createInterface } from 'node:readline';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, basename } from 'node:path';
 import chokidar from 'chokidar';
-import { ActivityBatch, ActivityReader } from '../domain/types';
+import { ActivityBatch, ActivityReader, Analytics, SessionSummary } from '../domain/types';
+
+function dayKey(ts: string | undefined, fallbackMs: number): string {
+  const d = ts ? new Date(ts) : new Date(fallbackMs);
+  const ms = d.getTime();
+  return new Date(Number.isNaN(ms) ? fallbackMs : ms).toISOString().slice(0, 10);
+}
 
 // Bounds — a long-lived project's session dir can be hundreds of MB across many
 // files; never read it all. Read at most a tail window per file per tick, and
@@ -176,6 +183,78 @@ export class SessionLogReader implements ActivityReader {
     let excerpt = parts.reverse().join('\n'); // roughly chronological
     if (excerpt.length > maxChars) excerpt = excerpt.slice(excerpt.length - maxChars);
     return excerpt;
+  }
+
+  /** Derived analytics (per-session history + aggregate token usage) over recent
+   *  files, streamed line-by-line and byte-budgeted so it never blows up memory. */
+  async analyze(days: number, maxBytes: number): Promise<Analytics> {
+    const cutoff = Date.now() - days * 86_400_000;
+    const recent: { file: string; size: number; mtime: number }[] = [];
+    for (const file of await this.sessionFiles()) {
+      try {
+        const s = await stat(file);
+        if (s.mtimeMs >= cutoff) recent.push({ file, size: s.size, mtime: s.mtimeMs });
+      } catch { /* skip */ }
+    }
+    recent.sort((a, b) => b.mtime - a.mtime);
+
+    const tok = { total: 0, input: 0, output: 0, cacheRead: 0, cacheCreate: 0, turns: 0, tools: 0 };
+    const perDay = new Map<string, number>();
+    const history: SessionSummary[] = [];
+    let bytes = 0;
+    let approx = false;
+
+    for (const { file, size, mtime } of recent) {
+      if (bytes > 0 && bytes + size > maxBytes) { approx = true; break; }
+      bytes += size;
+      let messages = 0, tools = 0, tokens = 0, title = '';
+      const rl = createInterface({ input: createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
+      try {
+        for await (const line of rl) {
+          const t = line.trim();
+          if (!t) continue;
+          let o: { type?: string; timestamp?: string; message?: { role?: string; content?: unknown; usage?: Record<string, number> } };
+          try { o = JSON.parse(t); } catch { continue; }
+          const role = o.message?.role;
+          if (o.type === 'user' && role === 'user') {
+            messages++;
+            if (!title) {
+              const txt = textFromContent(o.message?.content).trim();
+              if (txt) title = txt.length > 50 ? txt.slice(0, 50) + '…' : txt;
+            }
+          } else if (o.type === 'assistant' && role === 'assistant') {
+            messages++;
+            const u = o.message?.usage;
+            if (u) {
+              const inp = u.input_tokens || 0, out = u.output_tokens || 0;
+              const cr = u.cache_read_input_tokens || 0, cc = u.cache_creation_input_tokens || 0;
+              tok.input += inp; tok.output += out; tok.cacheRead += cr; tok.cacheCreate += cc; tok.turns++;
+              const tt = inp + out + cr + cc; tokens += tt; tok.total += tt;
+              perDay.set(dayKey(o.timestamp, mtime), (perDay.get(dayKey(o.timestamp, mtime)) || 0) + tt);
+            }
+            if (Array.isArray(o.message?.content)) {
+              for (const b of o.message.content as Array<{ type?: string }>) if (b?.type === 'tool_use') { tools++; tok.tools++; }
+            }
+          }
+        }
+      } finally {
+        rl.close();
+      }
+      history.push({
+        id: basename(file).replace(/\.jsonl$/, '').slice(0, 8),
+        title: title || '(제목 없음)',
+        time: mtime,
+        messages,
+        tools,
+        tokens,
+      });
+    }
+
+    const perDayArr = [...perDay.entries()]
+      .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+      .slice(0, 14)
+      .map(([date, total]) => ({ date, total }));
+    return { tokens: { ...tok, perDay: perDayArr }, history, approx };
   }
 
   watch(onActivity: () => void): () => void {
