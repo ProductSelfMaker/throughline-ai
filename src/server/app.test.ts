@@ -4,51 +4,54 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SpecStore } from '../core/spec-store';
-import { ConversationStore } from './conversation-store';
-import { FakeAgentRunner } from '../agent/fake-runner';
+import { IngestStore } from '../core/ingest-store';
 import { Session } from './session';
 import { createApp } from './app';
+import { ActivityReader } from '../domain/types';
+
+const idleReader: ActivityReader = {
+  async readNew() { return { excerpt: '', advanced: {} }; },
+  watch() { return () => {}; },
+};
 
 let dir: string;
 let session: Session | undefined;
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'tl-')); });
 afterEach(async () => { session?.stop(); await rm(dir, { recursive: true, force: true }); });
 
-function mk(runner = new FakeAgentRunner()): Session {
-  return new Session({ store: new SpecStore(join(dir, 'spec.md')), runner, conversation: new ConversationStore(dir), cwd: dir, gitDiff: async () => '' });
+function mk(reply = '') {
+  return new Session({
+    store: new SpecStore(join(dir, '.throughline', 'prd.md')),
+    runner: { complete: async () => reply },
+    reader: idleReader,
+    ingest: new IngestStore(dir),
+    cwd: dir,
+    gitDiff: async () => '',
+  });
 }
 
-describe('POST /api/chat', () => {
-  it('streams NDJSON events ending with done', async () => {
-    session = mk(new FakeAgentRunner({ chatEvents: [{ type: 'tool', name: 'Edit', target: 'a.tsx' }, { type: 'text', text: 'ok' }] }));
-    const res = await createApp(session).request('/api/chat', {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: 'hi' }),
+describe('POST /api/curate', () => {
+  it('400s on empty instruction', async () => {
+    session = mk();
+    const res = await createApp(session).request('/api/curate', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ instruction: '  ' }),
     });
-    expect(res.status).toBe(200);
-    const lines = (await res.text()).trim().split('\n').map((l) => JSON.parse(l));
-    expect(lines).toEqual([
-      { type: 'tool', name: 'Edit', target: 'a.tsx' },
-      { type: 'text', text: 'ok' },
-      { type: 'done' },
-    ]);
+    expect(res.status).toBe(400);
   });
-});
 
-describe('GET /api/transcript', () => {
-  it('returns the in-memory transcript', async () => {
-    session = mk(new FakeAgentRunner({ chatEvents: [{ type: 'text', text: 'ok' }] }));
-    const chatRes = await createApp(session).request('/api/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: 'hi' }) });
-    await chatRes.text();
-    const res = await createApp(session).request('/api/transcript');
-    expect(await res.json()).toEqual({ transcript: [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'ok' }] });
+  it('applies a curation instruction', async () => {
+    const PRD = `## 📌 개요\nX\n\n## 🎯 목표\n- a\n\n## ✅ 기능 요구사항\n- [ ] b\n\n## ❓ 미해결 질문\n- c\n`;
+    session = mk(PRD);
+    const res = await createApp(session).request('/api/curate', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ instruction: '리스크 추가' }),
+    });
+    expect(await res.json()).toEqual({ ok: true });
   });
 });
 
 describe('GET /api/flow', () => {
   it('returns { mermaid }', async () => {
-    const store = new SpecStore(join(dir, 'spec.md'));
-    await store.write('## ✅ 핵심 기능\n- [ ] 소셜 로그인\n');
-    session = new Session({ store, runner: new FakeAgentRunner({ completeReply: 'flowchart TD\n A-->B' }), conversation: new ConversationStore(dir), cwd: dir, gitDiff: async () => '' });
+    session = mk('flowchart TD\n A-->B');
     const res = await createApp(session).request('/api/flow');
     expect(await res.json()).toEqual({ mermaid: 'flowchart TD\n A-->B' });
   });

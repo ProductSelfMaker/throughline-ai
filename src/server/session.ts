@@ -1,13 +1,14 @@
 // src/server/session.ts
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { AgentRunner, ChatEvent, Message } from '../domain/types';
+import { ActivityReader } from '../domain/types';
 import { SpecStore } from '../core/spec-store';
-import { ConversationStore } from './conversation-store';
+import { IngestStore } from '../core/ingest-store';
 import { Debouncer } from './debouncer';
 import { Broadcaster } from './broadcaster';
 import { buildFlowPrompt } from '../domain/flow-prompt';
 import { buildSyncPrompt } from '../domain/sync-prompt';
+import { buildCuratePrompt } from '../domain/curate-prompt';
 import { applySpecUpdate } from '../core/apply-spec-update';
 
 const execFileP = promisify(execFile);
@@ -21,44 +22,50 @@ async function defaultGitDiff(cwd: string): Promise<string> {
   }
 }
 
+// Minimal runner surface this engine needs (one-shot completion only).
+interface Completer {
+  complete(prompt: string, signal?: AbortSignal): Promise<string>;
+}
+
 export interface SessionDeps {
   store: SpecStore;
-  runner: AgentRunner;
-  conversation: ConversationStore;
+  runner: Completer;
+  reader: ActivityReader;
+  ingest: IngestStore;
   cwd: string;
   debounceMs?: number;
   gitDiff?: (cwd: string) => Promise<string>;
 }
 
-/** The chat workspace: hosts the conversation over the user's Claude Code and keeps the spec live. */
+/** Observer: reads the user's agent session logs and keeps the PRD live. */
 export class Session {
   readonly broadcaster = new Broadcaster();
-  readonly transcript: Message[] = [];
 
   private store: SpecStore;
-  private runner: AgentRunner;
-  private conversation: ConversationStore;
+  private runner: Completer;
+  private reader: ActivityReader;
+  private ingest: IngestStore;
   private cwd: string;
   private debouncer: Debouncer;
   private gitDiff: (cwd: string) => Promise<string>;
+  private checkpoint: Record<string, number> = {};
+  private unwatch?: () => void;
 
   constructor(deps: SessionDeps) {
     this.store = deps.store;
     this.runner = deps.runner;
-    this.conversation = deps.conversation;
+    this.reader = deps.reader;
+    this.ingest = deps.ingest;
     this.cwd = deps.cwd;
     this.debouncer = new Debouncer(deps.debounceMs ?? 8000);
     this.gitDiff = deps.gitDiff ?? defaultGitDiff;
   }
 
-  /** Restore the persisted conversation into memory. */
+  /** Load the checkpoint, catch up on any unprocessed activity, then watch. */
   async init(): Promise<void> {
-    const prev = await this.conversation.load();
-    this.transcript.push(...prev);
-  }
-
-  getTranscript(): Message[] {
-    return this.transcript;
+    this.checkpoint = await this.ingest.load();
+    await this.ingestNow();
+    this.unwatch = this.reader.watch(() => this.debouncer.schedule(() => { void this.ingestNow(); }));
   }
 
   readSpec(): Promise<string> {
@@ -70,47 +77,43 @@ export class Session {
     return this.runner.complete(buildFlowPrompt(spec), signal);
   }
 
-  /** Append a user message, stream the assistant reply, persist both, then debounce a sync. */
-  async sendUserMessage(
-    content: string,
-    onEvent: (e: ChatEvent) => void,
-    signal?: AbortSignal,
-  ): Promise<string> {
-    const userMsg: Message = { role: 'user', content };
-    this.transcript.push(userMsg);
-    await this.conversation.append(userMsg);
-
-    const reply = await this.runner.converse(this.transcript, onEvent, signal);
-
-    const assistantMsg: Message = { role: 'assistant', content: reply };
-    this.transcript.push(assistantMsg);
-    await this.conversation.append(assistantMsg);
-
-    this.debouncer.schedule(() => { void this.sync(); });
-    return reply;
-  }
-
-  private async sync(): Promise<void> {
+  /** Fold new agent activity into the PRD. Advances the checkpoint only on success. */
+  private async ingestNow(): Promise<void> {
     try {
+      const batch = await this.reader.readNew(this.checkpoint);
+      if (!batch.excerpt.trim()) return;
       const current = await this.store.read();
-      const transcriptText = this.transcript
-        .map((m) => `${m.role === 'user' ? '사용자' : 'AI'}: ${m.content}`)
-        .join('\n');
       const diff = await this.gitDiff(this.cwd);
-      const raw = await this.runner.complete(buildSyncPrompt(current, transcriptText, diff));
+      const raw = await this.runner.complete(buildSyncPrompt(current, batch.excerpt, diff));
       const applied = await applySpecUpdate(this.store, raw, current);
-      if (applied.ok) this.broadcaster.broadcast('spec-updated', applied.result);
+      if (applied.ok) {
+        this.checkpoint = { ...this.checkpoint, ...batch.advanced };
+        await this.ingest.save(this.checkpoint);
+        this.broadcaster.broadcast('spec-updated', applied.result);
+      }
     } catch {
-      // sync is best-effort; keep the last good spec
+      // best-effort; keep the last good PRD and retry the activity next time
     }
   }
 
-  /** Run any pending sync immediately (tests / shutdown). */
+  /** Apply a user curation instruction to the PRD immediately. */
+  async curate(instruction: string): Promise<void> {
+    const text = instruction.trim();
+    if (!text) return;
+    const current = await this.store.read();
+    const diff = await this.gitDiff(this.cwd);
+    const raw = await this.runner.complete(buildCuratePrompt(current, text, diff));
+    const applied = await applySpecUpdate(this.store, raw, current);
+    if (applied.ok) this.broadcaster.broadcast('spec-updated', applied.result);
+  }
+
+  /** Run any pending ingest immediately (tests / shutdown). */
   flush(): void {
     this.debouncer.flush();
   }
 
   stop(): void {
     this.debouncer.cancel();
+    this.unwatch?.();
   }
 }
