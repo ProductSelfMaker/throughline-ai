@@ -29,6 +29,20 @@ export type ChatEvent =
   | { type: 'text'; text: string }
   | { type: 'tool'; name: string; target: string };
 
+/** A batch of new agent activity since the last checkpoint. */
+export interface ActivityBatch {
+  /** Scribe-ready excerpt: "사용자: …" / "AI: …" / "[도구] name target" lines. */
+  excerpt: string;
+  /** session file (absolute path) -> new byte offset to persist. */
+  advanced: Record<string, number>;
+}
+
+/** Reads new agent activity for a project and watches for more. */
+export interface ActivityReader {
+  readNew(checkpoint: Record<string, number>): Promise<ActivityBatch>;
+  watch(onActivity: () => void): () => void;
+}
+
 export interface AgentRunner {
   /** Drives the user's Claude Code; streams text deltas and tool-use events; resolves with the full assistant text. */
   converse(
