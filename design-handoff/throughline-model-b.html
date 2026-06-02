@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Throughline — Model B (Observer) Design Proposal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  /* ===== DESIGN TOKENS (cards / light) ===== */
+  :root{
+    --font-sans:"Geist",-apple-system,system-ui,"Apple SD Gothic Neo","Segoe UI",sans-serif;
+    --font-mono:"Geist Mono",ui-monospace,"SF Mono",monospace;
+    --bg:#e9e6dd; --panel:#fff; --panel-2:#fdfcfa; --inset:#f3f1ec; --inset-2:#e9e6df;
+    --border:#e7e3da; --border-2:#dad4c8; --text:#18181b; --text-2:#52525b; --text-3:#9a9aa3;
+    --solid:#18181b; --on-solid:#fff; --radius:16px; --gutter:11px;
+    --shadow:0 1px 2px rgba(60,50,30,.06),0 16px 34px -18px rgba(60,50,30,.22);
+  }
+  *{box-sizing:border-box;}
+  body.handoff{margin:0;background:#e6e3da;font-family:var(--font-sans);color:var(--text);padding:40px 24px 64px;-webkit-font-smoothing:antialiased;letter-spacing:-0.006em;}
+  .hh{max-width:1280px;margin:0 auto 26px;}
+  .hh h1{font-size:22px;margin:0 0 6px;letter-spacing:-0.02em;}
+  .hh p{margin:0;color:#6b675e;font-size:14px;line-height:1.6;}
+  .lbl{max-width:1280px;margin:0 auto 10px;font-size:13px;font-weight:700;color:#44413a;}
+  .note{max-width:1280px;margin:-4px auto 12px;font-size:12px;color:#8a877e;}
+  .window{width:1280px;max-width:100%;height:760px;margin:0 auto 52px;border-radius:18px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,.12),0 2px 8px rgba(0,0,0,.06);}
+
+  /* ===== app shell: no sidebar, no header ===== */
+  .tl{position:relative;height:100%;display:flex;gap:var(--gutter);padding:var(--gutter);background:var(--bg);font-size:14px;line-height:1.5;}
+  .tl-region{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;}
+  .tl-main{flex:1;}
+  .tl-rail{flex:0 0 48px;background:var(--panel-2);align-items:center;padding:10px 0;gap:4px;}
+
+  /* top row: service name (+ optional inline actions, e.g. 목업 생성). No divider. */
+  .tl-toprow{display:flex;align-items:center;gap:12px;padding:16px 22px 8px;flex:0 0 auto;}
+  .tl-toprow .wm{font-size:15px;font-weight:600;letter-spacing:-0.02em;}
+  .tl-toprow .sp{flex:1;}
+  .tl-gen{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 14px;border-radius:9px;background:var(--solid);color:var(--on-solid);font-size:13px;font-weight:550;border:none;cursor:pointer;}
+  .tl-gen svg{width:14px;height:14px;}
+  .tl-mock-note{font-family:var(--font-mono);font-size:11px;color:var(--text-3);}
+
+  /* rail */
+  .tl-rail-btn{width:36px;height:36px;display:grid;place-items:center;border:1px solid transparent;border-radius:9px;background:transparent;cursor:pointer;color:var(--text-3);}
+  .tl-rail-btn svg{width:19px;height:19px;display:block;}
+  .tl-rail-btn:hover{background:var(--inset);color:var(--text-2);}
+  .tl-rail-btn.active{background:var(--inset-2);color:var(--text);border-color:var(--border);}
+
+  /* ===== floating scribe chat — collapsed FAB (default) ===== */
+  .tl-fab{position:absolute;right:68px;bottom:22px;width:50px;height:50px;border-radius:50%;background:var(--solid);color:var(--on-solid);display:grid;place-items:center;box-shadow:0 10px 24px -6px rgba(60,50,30,.42);cursor:pointer;z-index:30;}
+  .tl-fab svg{width:22px;height:22px;}
+
+  /* ===== floating scribe chat — expanded (tall, multi-turn) ===== */
+  .tl-fchat{position:absolute;right:68px;bottom:22px;width:360px;height:480px;max-height:84%;background:var(--panel);border:1px solid var(--border-2);border-radius:16px;box-shadow:0 16px 44px -10px rgba(60,50,30,.42),0 2px 8px rgba(60,50,30,.14);display:flex;flex-direction:column;overflow:hidden;z-index:30;}
+  .tl-fchat-head{display:flex;align-items:center;gap:9px;padding:12px 14px;border-bottom:1px solid var(--border);flex:0 0 auto;}
+  .tl-fbadge{width:20px;height:20px;border-radius:6px;background:var(--solid);color:var(--on-solid);display:grid;place-items:center;}
+  .tl-fbadge svg{width:12px;height:12px;}
+  .tl-fname{font-size:13px;font-weight:600;}
+  .tl-fsub{font-size:11px;color:var(--text-3);font-family:var(--font-mono);}
+  .tl-fchat-head .sp{flex:1;}
+  .tl-fmin{width:24px;height:24px;display:grid;place-items:center;border-radius:6px;color:var(--text-3);cursor:pointer;}
+  .tl-fmin:hover{background:var(--inset);}
+  .tl-fthread{flex:1;min-height:0;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px;}
+  .tl-fu{align-self:flex-end;max-width:85%;background:var(--solid);color:var(--on-solid);border-radius:13px 13px 4px 13px;padding:8px 12px;font-size:12.5px;line-height:1.5;}
+  .tl-fa{align-self:flex-start;max-width:90%;background:var(--inset);color:var(--text-2);border-radius:13px 13px 13px 4px;padding:8px 12px;font-size:12.5px;line-height:1.55;}
+  .tl-finput{margin:0 12px 12px;border:1px solid var(--border-2);border-radius:13px;padding:9px 9px 7px 13px;display:flex;flex-direction:column;gap:8px;flex:0 0 auto;}
+  .tl-finput .ph{font-size:13px;color:var(--text-3);}
+  .tl-finput .row{display:flex;align-items:center;}
+  .tl-finput .row .sp{flex:1;}
+  .tl-send{width:30px;height:30px;border:none;border-radius:8px;background:var(--solid);color:var(--on-solid);display:grid;place-items:center;cursor:pointer;}
+  .tl-send svg{width:15px;height:15px;}
+
+  /* ---- DOC (PRD) ---- */
+  .tl-doc{flex:1;overflow:auto;padding:6px 26px 26px;}
+  .tl-doc-inner{max-width:560px;}
+  .tl-kicker{font-family:var(--font-mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-bottom:10px;}
+  .tl-doc h1{font-size:24px;font-weight:600;letter-spacing:-0.025em;margin:0 0 18px;}
+  .tl-doc h2{font-size:13px;font-weight:600;margin:24px 0 10px;padding-bottom:7px;border-bottom:1px solid var(--border);}
+  .tl-doc h2:first-of-type{margin-top:0;}
+  .tl-doc p{margin:0 0 10px;font-size:14px;line-height:1.7;color:var(--text-2);}
+  .tl-doc ul{margin:0 0 12px;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;}
+  .tl-doc li{display:flex;gap:10px;font-size:14px;color:var(--text-2);}
+  .tl-doc li::before{content:"";flex:0 0 auto;width:5px;height:5px;border-radius:50%;background:var(--text-3);margin-top:8px;}
+  .tl-doc .chk{display:flex;gap:9px;align-items:flex-start;font-size:14px;}
+  .tl-doc .chk::before{content:"";flex:0 0 auto;width:15px;height:15px;border-radius:4px;border:1.5px solid var(--border-2);margin-top:2px;}
+  .tl-doc .chk.done::before{background:var(--solid);border-color:var(--solid);}
+  .tl-doc .chk.done span{color:var(--text-3);text-decoration:line-through;}
+  .tl-doc code{font-family:var(--font-mono);font-size:12.5px;background:var(--inset);border:1px solid var(--border);border-radius:5px;padding:1px 5px;}
+
+  /* ---- shared body padding ---- */
+  .tl-pad{flex:1;overflow:auto;padding:6px 30px 28px;}
+  .tl-section-h{font-size:12px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin:0 0 12px;}
+
+  /* ---- TOKENS ---- */
+  .tl-tok-hero{display:flex;gap:28px;align-items:baseline;margin:6px 0 22px;}
+  .tl-tok-big{font-size:34px;font-weight:650;letter-spacing:-0.03em;}
+  .tl-tok-big small{font-size:15px;font-weight:500;color:var(--text-3);margin-left:6px;}
+  .tl-tok-cost{font-family:var(--font-mono);font-size:13px;color:var(--text-2);}
+  .tl-grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:26px;max-width:880px;}
+  .tl-stat{border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
+  .tl-stat .k{font-family:var(--font-mono);font-size:11px;color:var(--text-3);}
+  .tl-stat .v{font-size:21px;font-weight:600;margin-top:6px;letter-spacing:-0.02em;}
+  .tl-bars{display:flex;flex-direction:column;gap:11px;max-width:560px;}
+  .tl-bar-row{display:flex;align-items:center;gap:12px;}
+  .tl-bar-row .lbl{flex:0 0 96px;font-family:var(--font-mono);font-size:12px;color:var(--text-2);}
+  .tl-bar{flex:1;height:8px;border-radius:4px;background:var(--inset);overflow:hidden;}
+  .tl-bar>i{display:block;height:100%;background:var(--solid);border-radius:4px;}
+  .tl-bar-row .val{flex:0 0 58px;text-align:right;font-family:var(--font-mono);font-size:12px;color:var(--text-3);}
+
+  /* ---- HISTORY ---- */
+  .tl-hist-group{margin-bottom:20px;max-width:640px;}
+  .tl-hist-item{display:flex;gap:14px;padding:13px 0;border-top:1px solid var(--border);}
+  .tl-hist-time{flex:0 0 52px;font-family:var(--font-mono);font-size:11.5px;color:var(--text-3);padding-top:2px;}
+  .tl-hist-b .t{font-size:14px;font-weight:550;}
+  .tl-hist-b .s{font-size:13px;color:var(--text-2);margin-top:3px;line-height:1.5;}
+  .tl-hist-b .meta{display:flex;gap:12px;margin-top:7px;font-family:var(--font-mono);font-size:11px;color:var(--text-3);}
+
+  /* ---- DECISIONS ---- */
+  .tl-dec{position:relative;padding-left:24px;margin-bottom:20px;max-width:600px;}
+  .tl-dec::before{content:"";position:absolute;left:3px;top:5px;width:10px;height:10px;border-radius:50%;background:var(--solid);}
+  .tl-dec::after{content:"";position:absolute;left:7.5px;top:18px;bottom:-20px;width:1.5px;background:var(--border-2);}
+  .tl-dec:last-child::after{display:none;}
+  .tl-dec .d{font-size:14.5px;font-weight:600;}
+  .tl-dec .why{font-size:13px;color:var(--text-2);margin-top:5px;line-height:1.55;}
+  .tl-dec .alt{font-size:12px;color:var(--text-3);margin-top:5px;font-family:var(--font-mono);}
+
+  /* ---- MOCKUP ---- */
+  .tl-canvas{flex:1;min-height:0;overflow:auto;margin:6px 11px 11px;border-radius:12px;background:var(--inset);background-image:radial-gradient(var(--border-2) 1px,transparent 1px);background-size:22px 22px;padding:28px;}
+  .tl-boards{display:flex;gap:24px;flex-wrap:wrap;}
+  .tl-board{width:220px;}
+  .tl-board .cap{font-family:var(--font-mono);font-size:11px;color:var(--text-3);margin-bottom:8px;}
+  .tl-art{background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);height:290px;padding:18px;display:flex;flex-direction:column;}
+  .tl-art .bar{height:8px;width:50%;background:var(--inset-2);border-radius:4px;margin-bottom:14px;}
+  .tl-art .ln{height:7px;background:var(--inset);border-radius:4px;margin-bottom:8px;}
+  .tl-art .btn{margin-top:auto;height:30px;border-radius:8px;background:var(--solid);}
+  .tl-art .field{height:30px;border:1px solid var(--border-2);border-radius:7px;margin-bottom:9px;}
+  .tl-art .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;}
+  .tl-art .tile{height:42px;background:var(--inset);border-radius:8px;}
+</style>
+</head>
+<body class="handoff">
+
+<div class="hh">
+  <h1>Throughline — Model B (Observer) · 디자인 제안 v3</h1>
+  <p>
+    사이드바·헤더 없음(상단엔 서비스 이름만). <b>스크라이브 챗은 우측 하단 작은 버튼</b> — 누르면 <b>긴 채팅 영역</b>이 펼쳐져 AI와 여러 번 주고받을 수 있음(모든 뷰 공통).
+    목업의 <b>"목업 생성" 버튼은 서비스 이름과 같은 행</b>. 우측 레일이 5개 뷰 전환. (프레임 1 = 챗 펼친 상태, 2~5 = 접힌 버튼.)
+  </p>
+</div>
+
+<!-- ============ 1. 문서 (PRD) — 챗 펼친 상태 ============ -->
+<div class="lbl">1 · 문서 (PRD) — 플로팅 챗을 펼친 상태 (여러 번 대화 가능한 스레드)</div>
+<div class="window">
+  <div class="tl">
+    <section class="tl-region tl-main">
+      <div class="tl-toprow"><span class="wm">Throughline</span></div>
+      <div class="tl-doc">
+        <div class="tl-doc-inner">
+          <div class="tl-kicker">PRD · 자동 생성</div>
+          <h1>Throughline</h1>
+          <h2>📌 개요</h2>
+          <p>개발자가 자기 터미널에서 작업하는 동안, 세션 로그를 읽어 살아있는 PRD를 유지하고 작업을 분석해 보여주는 옵저버 컴패니언.</p>
+          <h2>🎯 목표</h2>
+          <ul><li>워크플로를 0으로 바꾸고 의도·문서를 자동 정리</li><li>수개월에 걸친 작업을 누적 보존</li></ul>
+          <h2>✅ 기능 요구사항</h2>
+          <div class="chk done"><span>세션 로그 리딩 → PRD 누적</span></div>
+          <div class="chk done"><span>스크라이브 큐레이션 챗 (플로팅)</span></div>
+          <div class="chk"><span>토큰 사용량 분석 뷰</span></div>
+          <div class="chk"><span>목업 생성 (디자인 캔버스)</span></div>
+          <h2>❓ 미해결 질문</h2>
+          <ul><li>비-Claude 에이전트 로그 어댑터?</li><li>비용 상한?</li></ul>
+        </div>
+      </div>
+    </section>
+    <nav class="tl-region tl-rail">
+      <button class="tl-rail-btn active" title="문서"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></svg></button>
+      <button class="tl-rail-btn" title="히스토리"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg></button>
+      <button class="tl-rail-btn" title="의사결정"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="12" r="2.2"/><path d="M6 8.2v7.6M8.2 6h4a3.6 3.6 0 0 1 3.6 3.6v.6M8.2 18h4a3.6 3.6 0 0 0 3.6-3.6v-.6"/></svg></button>
+      <button class="tl-rail-btn" title="토큰"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></button>
+      <button class="tl-rail-btn" title="목업"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg></button>
+    </nav>
+    <!-- expanded floating chat (tall, multi-turn) -->
+    <div class="tl-fchat">
+      <div class="tl-fchat-head">
+        <span class="tl-fbadge"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5l1.6 5.1a4 4 0 0 0 2.6 2.6L21.5 12l-5.1 1.6a4 4 0 0 0-2.6 2.6L12 21.5l-1.6-5.1a4 4 0 0 0-2.6-2.6L2.5 12l5.1-1.6a4 4 0 0 0 2.6-2.6z"/></svg></span>
+        <span class="tl-fname">스크라이브</span><span class="tl-fsub">문서 정리</span>
+        <span class="sp"></span><span class="tl-fmin">—</span>
+      </div>
+      <div class="tl-fthread">
+        <div class="tl-fa">문서를 어떻게 다듬을지 말해 주세요.</div>
+        <div class="tl-fu">미해결 질문에 "비용 상한" 추가해</div>
+        <div class="tl-fa">추가했어요. "## ❓ 미해결 질문"에 항목을 넣었습니다.</div>
+        <div class="tl-fu">개요를 한 문장으로 줄여줘</div>
+        <div class="tl-fa">개요를 한 문장으로 정리했어요. 문서에 반영됐습니다.</div>
+      </div>
+      <div class="tl-finput">
+        <div class="ph">스크라이브에게 지시…</div>
+        <div class="row"><span class="sp"></span><button class="tl-send">↑</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 2. 토큰 사용량 — 챗 접힌 버튼 ============ -->
+<div class="lbl">2 · 토큰 사용량 — 플로팅 챗은 접힌 작은 버튼(우측 하단). 누르면 위 1번처럼 펼쳐짐.</div>
+<div class="window">
+  <div class="tl">
+    <section class="tl-region tl-main">
+      <div class="tl-toprow"><span class="wm">Throughline</span></div>
+      <div class="tl-pad">
+        <div class="tl-tok-hero">
+          <div class="tl-tok-big">1.24M<small>토큰</small></div>
+          <div class="tl-tok-cost">추정 비용 ≈ $3.84 · 493 턴 · 241 도구 호출</div>
+        </div>
+        <div class="tl-grid4">
+          <div class="tl-stat"><div class="k">입력</div><div class="v">312K</div></div>
+          <div class="tl-stat"><div class="k">출력</div><div class="v">89K</div></div>
+          <div class="tl-stat"><div class="k">캐시 읽기</div><div class="v">760K</div></div>
+          <div class="tl-stat"><div class="k">캐시 생성</div><div class="v">78K</div></div>
+        </div>
+        <p class="tl-section-h">일자별</p>
+        <div class="tl-bars">
+          <div class="tl-bar-row"><span class="lbl">6/02</span><span class="tl-bar"><i style="width:92%"></i></span><span class="val">540K</span></div>
+          <div class="tl-bar-row"><span class="lbl">6/01</span><span class="tl-bar"><i style="width:64%"></i></span><span class="val">372K</span></div>
+          <div class="tl-bar-row"><span class="lbl">5/31</span><span class="tl-bar"><i style="width:38%"></i></span><span class="val">221K</span></div>
+          <div class="tl-bar-row"><span class="lbl">5/30</span><span class="tl-bar"><i style="width:18%"></i></span><span class="val">107K</span></div>
+        </div>
+      </div>
+    </section>
+    <nav class="tl-region tl-rail">
+      <button class="tl-rail-btn" title="문서"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></svg></button>
+      <button class="tl-rail-btn" title="히스토리"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg></button>
+      <button class="tl-rail-btn" title="의사결정"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="12" r="2.2"/><path d="M6 8.2v7.6M8.2 6h4a3.6 3.6 0 0 1 3.6 3.6v.6M8.2 18h4a3.6 3.6 0 0 0 3.6-3.6v-.6"/></svg></button>
+      <button class="tl-rail-btn active" title="토큰"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></button>
+      <button class="tl-rail-btn" title="목업"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg></button>
+    </nav>
+    <div class="tl-fab"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5l1.6 5.1a4 4 0 0 0 2.6 2.6L21.5 12l-5.1 1.6a4 4 0 0 0-2.6 2.6L12 21.5l-1.6-5.1a4 4 0 0 0-2.6-2.6L2.5 12l5.1-1.6a4 4 0 0 0 2.6-2.6z"/></svg></div>
+  </div>
+</div>
+
+<!-- ============ 3. 히스토리 ============ -->
+<div class="lbl">3 · 히스토리 — 세션 타임스탬프·메시지·도구 시퀀스에서 작업별로 묶음.</div>
+<div class="window">
+  <div class="tl">
+    <section class="tl-region tl-main">
+      <div class="tl-toprow"><span class="wm">Throughline</span></div>
+      <div class="tl-pad">
+        <div class="tl-hist-group">
+          <p class="tl-section-h">오늘</p>
+          <div class="tl-hist-item"><div class="tl-hist-time">23:10</div><div class="tl-hist-b"><div class="t">모델 B 피봇 설계 & 스펙</div><div class="s">코딩 챗 제거, 세션 로그 리딩, 누적 PRD, 스크라이브 챗으로 방향 확정 → 스펙/플랜 작성.</div><div class="meta"><span>18 메시지</span><span>3 도구</span><span>540K 토큰</span></div></div></div>
+          <div class="tl-hist-item"><div class="tl-hist-time">22:10</div><div class="tl-hist-b"><div class="t">문서 → PRD 전환</div><div class="s">요약/핵심기능/미정 구조를 PRD 스파인 + 자가치유로 교체. 38 테스트 통과.</div><div class="meta"><span>9 메시지</span><span>12 도구</span><span>180K 토큰</span></div></div></div>
+        </div>
+        <div class="tl-hist-group">
+          <p class="tl-section-h">어제</p>
+          <div class="tl-hist-item"><div class="tl-hist-time">21:30</div><div class="tl-hist-b"><div class="t">Plain 톤 리디자인</div><div class="s">따뜻한 캔버스 + 카드 + Geist. 영역 분할 정리.</div><div class="meta"><span>14 메시지</span><span>20 도구</span><span>372K 토큰</span></div></div></div>
+        </div>
+      </div>
+    </section>
+    <nav class="tl-region tl-rail">
+      <button class="tl-rail-btn" title="문서"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></svg></button>
+      <button class="tl-rail-btn active" title="히스토리"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg></button>
+      <button class="tl-rail-btn" title="의사결정"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="12" r="2.2"/><path d="M6 8.2v7.6M8.2 6h4a3.6 3.6 0 0 1 3.6 3.6v.6M8.2 18h4a3.6 3.6 0 0 0 3.6-3.6v-.6"/></svg></button>
+      <button class="tl-rail-btn" title="토큰"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></button>
+      <button class="tl-rail-btn" title="목업"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg></button>
+    </nav>
+    <div class="tl-fab"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5l1.6 5.1a4 4 0 0 0 2.6 2.6L21.5 12l-5.1 1.6a4 4 0 0 0-2.6 2.6L12 21.5l-1.6-5.1a4 4 0 0 0-2.6-2.6L2.5 12l5.1-1.6a4 4 0 0 0 2.6-2.6z"/></svg></div>
+  </div>
+</div>
+
+<!-- ============ 4. 의사결정 흐름 ============ -->
+<div class="lbl">4 · 의사결정 흐름 — 대화에서 "무엇을 / 왜 / 대안" 결정을 추출해 연결.</div>
+<div class="window">
+  <div class="tl">
+    <section class="tl-region tl-main">
+      <div class="tl-toprow"><span class="wm">Throughline</span></div>
+      <div class="tl-pad">
+        <div class="tl-dec"><div class="d">채팅 모델 → 옵저버 모델로 피봇</div><div class="why">자체 코딩 챗은 터미널과 이중적. 내 작업을 문서화하는 원래 가치에 충실.</div><div class="alt">대안: 챗 유지 / PTY 래핑 — 기각</div></div>
+        <div class="tl-dec"><div class="d">캡처 = 세션 로그 리딩</div><div class="why">~/.claude/projects의 JSONL을 읽으면 워크플로 0 변경.</div><div class="alt">대안: 터미널 래핑 — 기각</div></div>
+        <div class="tl-dec"><div class="d">문서 = 누적 PRD (자가치유)</div><div class="why">수개월 누적 + 빠진 섹션 자동 삽입.</div><div class="alt">대안: 자유 양식 — 드리프트 우려로 기각</div></div>
+        <div class="tl-dec"><div class="d">사이드바·헤더 제거 · 챗은 플로팅 버튼</div><div class="why">구조 단순화. 챗은 모든 뷰에서 우측 하단 버튼 → 펼치면 긴 대화.</div><div class="alt">유저 플로우·iframe 제거 · 목업 추가</div></div>
+      </div>
+    </section>
+    <nav class="tl-region tl-rail">
+      <button class="tl-rail-btn" title="문서"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></svg></button>
+      <button class="tl-rail-btn" title="히스토리"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg></button>
+      <button class="tl-rail-btn active" title="의사결정"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="12" r="2.2"/><path d="M6 8.2v7.6M8.2 6h4a3.6 3.6 0 0 1 3.6 3.6v.6M8.2 18h4a3.6 3.6 0 0 0 3.6-3.6v-.6"/></svg></button>
+      <button class="tl-rail-btn" title="토큰"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></button>
+      <button class="tl-rail-btn" title="목업"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg></button>
+    </nav>
+    <div class="tl-fab"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5l1.6 5.1a4 4 0 0 0 2.6 2.6L21.5 12l-5.1 1.6a4 4 0 0 0-2.6 2.6L12 21.5l-1.6-5.1a4 4 0 0 0-2.6-2.6L2.5 12l5.1-1.6a4 4 0 0 0 2.6-2.6z"/></svg></div>
+  </div>
+</div>
+
+<!-- ============ 5. 목업 — "목업 생성" 버튼이 서비스 이름과 같은 행 ============ -->
+<div class="lbl">5 · 목업 — "목업 생성" 버튼이 Throughline과 같은 행. 트리거로 화면들을 가상 데이터 캔버스에 펼침.</div>
+<div class="window">
+  <div class="tl">
+    <section class="tl-region tl-main">
+      <div class="tl-toprow">
+        <span class="wm">Throughline</span>
+        <span class="sp"></span>
+        <span class="tl-mock-note">누적 내용 기반 · 가상 데이터 · 마지막 생성: 방금</span>
+        <button class="tl-gen"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5l1.6 5.1a4 4 0 0 0 2.6 2.6L21.5 12l-5.1 1.6a4 4 0 0 0-2.6 2.6L12 21.5l-1.6-5.1a4 4 0 0 0-2.6-2.6L2.5 12l5.1-1.6a4 4 0 0 0 2.6-2.6z"/></svg>목업 생성</button>
+      </div>
+      <div class="tl-canvas">
+        <div class="tl-boards">
+          <div class="tl-board"><div class="cap">로그인</div><div class="tl-art"><div class="bar"></div><div class="field"></div><div class="field"></div><div class="btn"></div></div></div>
+          <div class="tl-board"><div class="cap">대시보드</div><div class="tl-art"><div class="bar"></div><div class="grid"><div class="tile"></div><div class="tile"></div><div class="tile"></div><div class="tile"></div></div><div class="ln"></div><div class="ln" style="width:70%"></div></div></div>
+          <div class="tl-board"><div class="cap">문서 뷰</div><div class="tl-art"><div class="bar"></div><div class="ln"></div><div class="ln"></div><div class="ln" style="width:80%"></div><div class="ln" style="width:60%"></div></div></div>
+          <div class="tl-board"><div class="cap">설정</div><div class="tl-art"><div class="bar"></div><div class="field"></div><div class="ln" style="width:50%"></div><div class="field"></div><div class="btn"></div></div></div>
+        </div>
+      </div>
+    </section>
+    <nav class="tl-region tl-rail">
+      <button class="tl-rail-btn" title="문서"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></svg></button>
+      <button class="tl-rail-btn" title="히스토리"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg></button>
+      <button class="tl-rail-btn" title="의사결정"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="12" r="2.2"/><path d="M6 8.2v7.6M8.2 6h4a3.6 3.6 0 0 1 3.6 3.6v.6M8.2 18h4a3.6 3.6 0 0 0 3.6-3.6v-.6"/></svg></button>
+      <button class="tl-rail-btn" title="토큰"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></button>
+      <button class="tl-rail-btn active" title="목업"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg></button>
+    </nav>
+    <div class="tl-fab"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5l1.6 5.1a4 4 0 0 0 2.6 2.6L21.5 12l-5.1 1.6a4 4 0 0 0-2.6 2.6L12 21.5l-1.6-5.1a4 4 0 0 0-2.6-2.6L2.5 12l5.1-1.6a4 4 0 0 0 2.6-2.6z"/></svg></div>
+  </div>
+</div>
+
+</body>
+</html>
