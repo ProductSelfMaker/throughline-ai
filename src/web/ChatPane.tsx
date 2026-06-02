@@ -14,9 +14,11 @@ export function ChatPane() {
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    let alive = true;
     fetchTranscript()
-      .then((msgs: Msg[]) => setTurns(msgs.map((m) => ({ role: m.role, content: m.content, tools: [] }))))
+      .then((msgs: Msg[]) => { if (alive) setTurns(msgs.map((m) => ({ role: m.role, content: m.content, tools: [] }))); })
       .catch(() => {});
+    return () => { alive = false; };
   }, []);
 
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [turns]);
@@ -37,6 +39,13 @@ export function ChatPane() {
           else if (ev.type === 'tool') copy[copy.length - 1] = { ...last, tools: [...last.tools, { name: ev.name, target: ev.target }] };
           return copy;
         });
+      });
+    } catch {
+      setTurns((t) => {
+        const copy = t.slice();
+        const last = copy[copy.length - 1];
+        copy[copy.length - 1] = { ...last, content: (last.content || '') + '\n\n_[오류가 발생했어요. 다시 시도해 주세요.]_' };
+        return copy;
       });
     } finally {
       setBusy(false);

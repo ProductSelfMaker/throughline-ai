@@ -91,19 +91,18 @@ export class Session {
   }
 
   private async sync(): Promise<void> {
-    const current = await this.store.read();
-    const transcriptText = this.transcript
-      .map((m) => `${m.role === 'user' ? '사용자' : 'AI'}: ${m.content}`)
-      .join('\n');
-    const diff = await this.gitDiff(this.cwd);
-    let raw: string;
     try {
-      raw = await this.runner.complete(buildSyncPrompt(current, transcriptText, diff));
+      const current = await this.store.read();
+      const transcriptText = this.transcript
+        .map((m) => `${m.role === 'user' ? '사용자' : 'AI'}: ${m.content}`)
+        .join('\n');
+      const diff = await this.gitDiff(this.cwd);
+      const raw = await this.runner.complete(buildSyncPrompt(current, transcriptText, diff));
+      const applied = await applySpecUpdate(this.store, raw, current);
+      if (applied.ok) this.broadcaster.broadcast('spec-updated', applied.result);
     } catch {
-      return; // keep last good spec
+      // sync is best-effort; keep the last good spec
     }
-    const applied = await applySpecUpdate(this.store, raw, current);
-    if (applied.ok) this.broadcaster.broadcast('spec-updated', applied.result);
   }
 
   /** Run any pending sync immediately (tests / shutdown). */

@@ -8,8 +8,10 @@ export function createApp(session: Session): Hono {
 
   app.post('/api/chat', async (c) => {
     const body = await c.req.json<{ message?: string }>();
+    const message = (body.message ?? '').trim();
+    if (!message) return c.json({ error: 'empty message' }, 400);
     return streamText(c, async (stream) => {
-      await session.sendUserMessage(body.message ?? '', (e) => {
+      await session.sendUserMessage(message, (e) => {
         void stream.write(JSON.stringify(e) + '\n');
       });
       await stream.write(JSON.stringify({ type: 'done' }) + '\n');
