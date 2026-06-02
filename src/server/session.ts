@@ -1,44 +1,64 @@
 // src/server/session.ts
-import chokidar, { type FSWatcher } from 'chokidar';
-import { AgentRunner, ScribeResult } from '../domain/types';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { AgentRunner, ChatEvent, Message } from '../domain/types';
 import { SpecStore } from '../core/spec-store';
-import { ActivityReader } from '../core/activity-reader';
-import { SyncEngine } from '../core/sync-engine';
+import { ConversationStore } from './conversation-store';
 import { Debouncer } from './debouncer';
 import { Broadcaster } from './broadcaster';
 import { buildFlowPrompt } from '../domain/flow-prompt';
+import { buildSyncPrompt } from '../domain/sync-prompt';
+import { applySpecUpdate } from '../core/apply-spec-update';
+
+const execFileP = promisify(execFile);
+
+async function defaultGitDiff(cwd: string): Promise<string> {
+  try {
+    const { stdout } = await execFileP('git', ['diff', 'HEAD'], { cwd, maxBuffer: 1024 * 1024 });
+    return stdout.length > 8000 ? stdout.slice(0, 8000) + '\n…(truncated)' : stdout;
+  } catch {
+    return '';
+  }
+}
 
 export interface SessionDeps {
   store: SpecStore;
   runner: AgentRunner;
-  reader: ActivityReader;
+  conversation: ConversationStore;
   cwd: string;
   debounceMs?: number;
+  gitDiff?: (cwd: string) => Promise<string>;
 }
 
-/** The workspace: watches the user's real activity and keeps the living spec current. */
+/** The chat workspace: hosts the conversation over the user's Claude Code and keeps the spec live. */
 export class Session {
   readonly broadcaster = new Broadcaster();
-  readonly engine: SyncEngine;
+  readonly transcript: Message[] = [];
 
   private store: SpecStore;
   private runner: AgentRunner;
-  private reader: ActivityReader;
+  private conversation: ConversationStore;
   private cwd: string;
   private debouncer: Debouncer;
-  private watcher: FSWatcher | null = null;
+  private gitDiff: (cwd: string) => Promise<string>;
 
   constructor(deps: SessionDeps) {
     this.store = deps.store;
     this.runner = deps.runner;
-    this.reader = deps.reader;
+    this.conversation = deps.conversation;
     this.cwd = deps.cwd;
-    this.engine = new SyncEngine(deps.store, deps.runner, deps.reader);
-    this.debouncer = new Debouncer(deps.debounceMs ?? 10_000);
+    this.debouncer = new Debouncer(deps.debounceMs ?? 8000);
+    this.gitDiff = deps.gitDiff ?? defaultGitDiff;
+  }
 
-    this.engine.on('updated', (r: ScribeResult) => {
-      this.broadcaster.broadcast('spec-updated', r);
-    });
+  /** Restore the persisted conversation into memory. */
+  async init(): Promise<void> {
+    const prev = await this.conversation.load();
+    this.transcript.push(...prev);
+  }
+
+  getTranscript(): Message[] {
+    return this.transcript;
   }
 
   readSpec(): Promise<string> {
@@ -50,23 +70,48 @@ export class Session {
     return this.runner.complete(buildFlowPrompt(spec), signal);
   }
 
-  /** Begin watching the repo + Claude Code transcript; debounce → sync. */
-  start(): void {
-    if (this.watcher) return;
-    // Watch both the repo (code changes) and the Claude Code transcript dir
-    // (pure conversation, no file save) so either kind of activity triggers a sync.
-    this.watcher = chokidar.watch([this.cwd, this.reader.projectDir], {
-      ignoreInitial: true,
-      ignored: (p: string) =>
-        /(^|\/)(\.git|node_modules|dist|docs|\.superpowers)(\/|$)/.test(p) || p.endsWith('/spec.md'),
-    });
-    const trigger = () => this.debouncer.schedule(() => { void this.engine.syncNow(); });
-    this.watcher.on('all', trigger);
+  /** Append a user message, stream the assistant reply, persist both, then debounce a sync. */
+  async sendUserMessage(
+    content: string,
+    onEvent: (e: ChatEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const userMsg: Message = { role: 'user', content };
+    this.transcript.push(userMsg);
+    await this.conversation.append(userMsg);
+
+    const reply = await this.runner.converse(this.transcript, onEvent, signal);
+
+    const assistantMsg: Message = { role: 'assistant', content: reply };
+    this.transcript.push(assistantMsg);
+    await this.conversation.append(assistantMsg);
+
+    this.debouncer.schedule(() => { void this.sync(); });
+    return reply;
+  }
+
+  private async sync(): Promise<void> {
+    const current = await this.store.read();
+    const transcriptText = this.transcript
+      .map((m) => `${m.role === 'user' ? '사용자' : 'AI'}: ${m.content}`)
+      .join('\n');
+    const diff = await this.gitDiff(this.cwd);
+    let raw: string;
+    try {
+      raw = await this.runner.complete(buildSyncPrompt(current, transcriptText, diff));
+    } catch {
+      return; // keep last good spec
+    }
+    const applied = await applySpecUpdate(this.store, raw, current);
+    if (applied.ok) this.broadcaster.broadcast('spec-updated', applied.result);
+  }
+
+  /** Run any pending sync immediately (tests / shutdown). */
+  flush(): void {
+    this.debouncer.flush();
   }
 
   stop(): void {
     this.debouncer.cancel();
-    void this.watcher?.close();
-    this.watcher = null;
   }
 }
