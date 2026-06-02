@@ -43,6 +43,9 @@ interface Completer {
 export interface SessionDeps {
   store: SpecStore;
   runner: Completer;
+  /** Optional separate runner for mockup generation — runs in the real project cwd
+   *  so it can read the actual UI source (the scribe runner uses a neutral cwd). */
+  mockupRunner?: Completer;
   reader: ActivityReader;
   ingest: IngestStore;
   cwd: string;
@@ -56,6 +59,7 @@ export class Session {
 
   private store: SpecStore;
   private runner: Completer;
+  private mockupRunner?: Completer;
   private reader: ActivityReader;
   private ingest: IngestStore;
   private cwd: string;
@@ -69,6 +73,7 @@ export class Session {
   constructor(deps: SessionDeps) {
     this.store = deps.store;
     this.runner = deps.runner;
+    this.mockupRunner = deps.mockupRunner;
     this.reader = deps.reader;
     this.ingest = deps.ingest;
     this.cwd = deps.cwd;
@@ -88,7 +93,7 @@ export class Session {
   async generateMockup(): Promise<string> {
     const doc = await this.store.read();
     try {
-      const html = (await this.runner.complete(buildMockupPrompt(doc))).trim();
+      const html = (await (this.mockupRunner ?? this.runner).complete(buildMockupPrompt(doc))).trim();
       if (html) {
         await mkdir(dirname(this.mockupPath), { recursive: true });
         await writeFile(this.mockupPath, html, 'utf8');

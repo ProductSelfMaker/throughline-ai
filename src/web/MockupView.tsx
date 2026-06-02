@@ -1,45 +1,51 @@
 // src/web/MockupView.tsx
-// User-triggered AI design canvas: generates a self-contained HTML mockup of the
-// product's screens from the product doc, rendered in a sandboxed iframe.
-import { useEffect, useState } from 'react';
-import { fetchMockup, generateMockup } from './api';
-import { Icons } from './icons';
+// Presentational design canvas: shows the generated mockup HTML in a sandboxed
+// iframe on a pannable canvas (drag to move around). Generation is triggered from
+// the top row in MainView; this component only renders.
+import { useEffect, useRef, useState } from 'react';
 
-export function MockupView() {
-  const [html, setHtml] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+export function MockupView({ html, busy }: { html: string | null; busy: boolean }) {
+  const [pan, setPan] = useState({ x: 24, y: 24 });
+  const drag = useRef<{ sx: number; sy: number; px: number; py: number } | null>(null);
 
+  // Track drag on the window so panning continues even off the iframe/viewport.
   useEffect(() => {
-    let alive = true;
-    fetchMockup().then((h) => { if (alive) setHtml(h); }).catch(() => { if (alive) setHtml(''); });
-    return () => { alive = false; };
+    function move(e: MouseEvent) {
+      const d = drag.current;
+      if (!d) return;
+      setPan({ x: d.px + (e.clientX - d.sx), y: d.py + (e.clientY - d.sy) });
+    }
+    function up() { drag.current = null; }
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    return () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
   }, []);
 
-  async function gen() {
-    setBusy(true);
-    try { setHtml(await generateMockup()); } catch { /* keep current */ } finally { setBusy(false); }
+  if (html === null) {
+    return <div className="tl-placeholder-wrap"><p className="tl-placeholder">불러오는 중…</p></div>;
+  }
+  if (!html) {
+    return (
+      <div className="tl-placeholder-wrap">
+        <p className="tl-placeholder">
+          {busy ? '생성 중…' : '상단의 "목업 생성"을 누르면 실제 화면을 그대로 재현한 목업을 캔버스에 펼칩니다.'}
+        </p>
+      </div>
+    );
   }
 
-  if (html === null) return <div className="tl-pad"><p className="tl-placeholder">불러오는 중…</p></div>;
-
   return (
-    <div className="tl-mockup">
-      <div className="tl-mock-bar">
-        <button className="tl-gen" type="button" onClick={() => void gen()} disabled={busy}>
-          {Icons.sparkle}{busy ? '생성 중…' : html ? '다시 생성' : '목업 생성'}
-        </button>
-        <span className="sp" />
-        <span className="tl-mock-note">제품 문서 기반 · 가상 데이터</span>
+    <div
+      className="tl-canvas-vp"
+      onMouseDown={(e) => { drag.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; }}
+    >
+      <div className="tl-canvas-pan" style={{ transform: `translate(${pan.x}px, ${pan.y}px)` }}>
+        {/* pointer-events:none so dragging over the iframe still pans the canvas */}
+        <iframe className="tl-canvas-frame" sandbox="" srcDoc={html} title="목업" />
       </div>
-      {html ? (
-        <div className="tl-mock-body">
-          <iframe className="tl-mock-frame" sandbox="" srcDoc={html} title="목업" />
-        </div>
-      ) : (
-        <div className="tl-placeholder-wrap">
-          <p className="tl-placeholder">"목업 생성"을 누르면 제품 문서를 바탕으로 화면들을 그려 펼쳐 보여줍니다.</p>
-        </div>
-      )}
     </div>
   );
 }

@@ -44,6 +44,9 @@ mkdirSync(scribeDir, { recursive: true });
 const session = new Session({
   store: new SpecStore(prdPath),
   runner: new ClaudeCodeRunner({ cwd: scribeDir }),
+  // mockup runs in the real project cwd so the agent can read the actual UI source
+  // and reproduce it faithfully.
+  mockupRunner: new ClaudeCodeRunner({ cwd }),
   reader: new SessionLogReader({ cwd }),
   ingest: new IngestStore(cwd),
   cwd,

@@ -73,16 +73,16 @@ body { margin: 0; background: #e9e6dd; }
 .tl-placeholder-wrap { flex: 1; display: flex; min-height: 0; }
 .tl-placeholder { margin: auto; color: var(--text-3); font-size: 14px; }
 
-/* ===== mockup view ===== */
-.tl-mockup { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
-.tl-mock-bar { display: flex; align-items: center; gap: 12px; padding: 10px 22px 8px; flex: 0 0 auto; }
-.tl-gen { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 14px; border-radius: 9px; background: var(--solid); color: var(--on-solid); font: inherit; font-size: 13px; font-weight: 550; border: none; cursor: pointer; }
+/* ===== mockup view (pannable design canvas) ===== */
+/* the generate button lives in the top row, styled with .tl-gen */
+.tl-gen { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 13px; border-radius: 8px; background: var(--solid); color: var(--on-solid); font: inherit; font-size: 12.5px; font-weight: 550; border: none; cursor: pointer; }
 .tl-gen:disabled { opacity: .55; cursor: default; }
-.tl-gen svg { width: 14px; height: 14px; }
-.tl-mock-note { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); }
-.tl-mock-bar .sp { flex: 1; }
-.tl-mock-body { flex: 1; min-height: 0; margin: 0 11px 11px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: #fff; }
-.tl-mock-frame { width: 100%; height: 100%; border: 0; background: #fff; }
+.tl-gen svg { width: 13px; height: 13px; }
+
+.tl-canvas-vp { flex: 1; min-height: 0; position: relative; margin: 0 11px 11px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--inset); background-image: radial-gradient(var(--border-2) 1px, transparent 1px); background-size: 22px 22px; cursor: grab; }
+.tl-canvas-vp:active { cursor: grabbing; }
+.tl-canvas-pan { position: absolute; top: 0; left: 0; will-change: transform; }
+.tl-canvas-frame { width: 3400px; height: 2400px; border: 0; background: transparent; display: block; pointer-events: none; }
 
 /* ===== analytics views (history / tokens) ===== */
 .tl-pad { flex: 1; overflow: auto; padding: 8px 30px 28px; }

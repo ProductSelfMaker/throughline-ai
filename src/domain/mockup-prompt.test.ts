@@ -9,4 +9,12 @@ describe('buildMockupPrompt', () => {
     expect(p).toContain('HTML');
     expect(p).toContain('아트보드');
   });
+
+  it('instructs reading the real UI source for pixel-faithful, all-state output', () => {
+    const p = buildMockupPrompt('## 개요');
+    expect(p).toContain('실제 코드');
+    expect(p).toContain('100%');
+    // interactive / interrupt states must be covered
+    expect(p).toContain('모달');
+  });
 });
