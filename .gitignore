@@ -3,3 +3,4 @@ dist/
 *.local
 .superpowers/
 spec.md
+.throughline/
