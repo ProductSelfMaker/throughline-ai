@@ -41,3 +41,19 @@ export async function fetchDecisions(): Promise<string> {
   const data = (await res.json()) as { md?: string };
   return data.md ?? '';
 }
+
+/** The latest generated mockup HTML ('' if none). */
+export async function fetchMockup(): Promise<string> {
+  const res = await fetch('/api/mockup');
+  if (!res.ok) return '';
+  const data = (await res.json()) as { html?: string };
+  return data.html ?? '';
+}
+
+/** Generate the mockup from the product doc (slow — LLM); returns the HTML. */
+export async function generateMockup(): Promise<string> {
+  const res = await fetch('/api/mockup', { method: 'POST' });
+  if (!res.ok) throw new Error(`mockup failed (${res.status})`);
+  const data = (await res.json()) as { html?: string };
+  return data.html ?? '';
+}

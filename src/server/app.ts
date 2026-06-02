@@ -23,6 +23,9 @@ export function createApp(session: Session): Hono {
 
   app.get('/api/decisions', async (c) => c.json({ md: await session.readDecisions() }));
 
+  app.get('/api/mockup', async (c) => c.json({ html: await session.readMockup() }));
+  app.post('/api/mockup', async (c) => c.json({ html: await session.generateMockup() }));
+
   app.get('/api/events', (c) => {
     return streamSSE(c, async (stream) => {
       const current = await session.readSpec();

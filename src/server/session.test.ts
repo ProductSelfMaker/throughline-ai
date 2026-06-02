@@ -88,4 +88,13 @@ describe('Session (observer)', () => {
     await updated;
     expect(await store.read()).toContain('## 개요');
   });
+
+  it('generateMockup stores and returns the generated HTML', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    await store.write('## 개요\n앱\n');
+    const html = '<!doctype html><html><body>mock</body></html>';
+    session = new Session({ store, runner: completer(html), reader: new FakeReader({ excerpt: '', advanced: {} }), ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '' });
+    expect(await session.generateMockup()).toBe(html);
+    expect(await session.readMockup()).toBe(html);
+  });
 });

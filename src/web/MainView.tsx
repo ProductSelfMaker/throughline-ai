@@ -9,6 +9,7 @@ import { rebuild, type Analytics } from './api';
 import { HistoryView } from './HistoryView';
 import { TokensView } from './TokensView';
 import { DecisionsView } from './DecisionsView';
+import { MockupView } from './MockupView';
 import type { ViewId } from './ViewRail';
 
 /** Drop a leading YAML frontmatter block so it doesn't render as a stray heading. */
@@ -69,9 +70,7 @@ export function MainView({
       ) : activeView === 'decisions' ? (
         <DecisionsView />
       ) : (
-        <div className="tl-placeholder-wrap">
-          <p className="tl-placeholder">목업 생성은 곧 제공됩니다 (별도 버튼).</p>
-        </div>
+        <MockupView />
       )}
 
       {confirm ? (

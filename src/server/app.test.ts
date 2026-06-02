@@ -63,6 +63,16 @@ describe('POST /api/rebuild', () => {
   });
 });
 
+describe('/api/mockup', () => {
+  it('GET returns "" when none; POST generates and returns the html', async () => {
+    session = mk('<html>m</html>');
+    const app = createApp(session);
+    expect(await (await app.request('/api/mockup')).json()).toEqual({ html: '' });
+    const post = await app.request('/api/mockup', { method: 'POST' });
+    expect(await post.json()).toEqual({ html: '<html>m</html>' });
+  });
+});
+
 describe('GET /api/decisions', () => {
   it('returns the decisions doc ("" when none yet)', async () => {
     session = mk();

@@ -13,6 +13,7 @@ import { buildFlowPrompt } from '../domain/flow-prompt';
 import { buildSyncPrompt } from '../domain/sync-prompt';
 import { buildCuratePrompt } from '../domain/curate-prompt';
 import { buildDecisionsPrompt } from '../domain/decisions-prompt';
+import { buildMockupPrompt } from '../domain/mockup-prompt';
 import { applySpecUpdate } from '../core/apply-spec-update';
 
 const execFileP = promisify(execFile);
@@ -61,6 +62,7 @@ export class Session {
   private debouncer: Debouncer;
   private gitDiff: (cwd: string) => Promise<string>;
   private decisionsPath: string;
+  private mockupPath: string;
   private checkpoint: Record<string, number> = {};
   private unwatch?: () => void;
 
@@ -73,6 +75,28 @@ export class Session {
     this.debouncer = new Debouncer(deps.debounceMs ?? 8000);
     this.gitDiff = deps.gitDiff ?? defaultGitDiff;
     this.decisionsPath = join(deps.cwd, '.throughline', 'decisions.md');
+    this.mockupPath = join(deps.cwd, '.throughline', 'mockup.html');
+  }
+
+  /** The latest generated mockup HTML ('' if none yet). */
+  async readMockup(): Promise<string> {
+    try { return existsSync(this.mockupPath) ? await readFile(this.mockupPath, 'utf8') : ''; }
+    catch { return ''; }
+  }
+
+  /** Generate a self-contained HTML design-canvas mockup from the product doc. */
+  async generateMockup(): Promise<string> {
+    const doc = await this.store.read();
+    try {
+      const html = (await this.runner.complete(buildMockupPrompt(doc))).trim();
+      if (html) {
+        await mkdir(dirname(this.mockupPath), { recursive: true });
+        await writeFile(this.mockupPath, html, 'utf8');
+      }
+    } catch {
+      // keep the previous mockup
+    }
+    return this.readMockup();
   }
 
   /** The latest generated decisions doc ('' if none yet). */
