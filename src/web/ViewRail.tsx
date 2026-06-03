@@ -28,11 +28,11 @@ export function ViewRail({
           type="button"
           className={'tl-rail-btn' + (active === v.id ? ' active' : '')}
           aria-pressed={active === v.id}
-          title={v.label}
           aria-label={v.label}
           onClick={() => onToggle(v.id)}
         >
           {v.icon}
+          <span className="tl-rail-tip">{v.label}</span>
         </button>
       ))}
     </nav>

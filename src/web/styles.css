@@ -65,10 +65,14 @@ body { margin: 0; background: #e9e6dd; }
 .tl-btn-ghost:disabled, .tl-btn-solid:disabled { opacity: .5; cursor: default; }
 
 /* rail */
-.tl-rail-btn { width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 9px; background: transparent; cursor: pointer; color: var(--text-3); }
+.tl-rail { overflow: visible; } /* let hover tooltips escape the rail */
+.tl-rail-btn { position: relative; width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 9px; background: transparent; cursor: pointer; color: var(--text-3); }
 .tl-rail-btn svg { width: 19px; height: 19px; display: block; }
 .tl-rail-btn:hover { background: var(--inset); color: var(--text-2); }
 .tl-rail-btn.active { background: var(--inset-2); color: var(--text); border-color: var(--border); }
+/* hover label, shown to the left of the icon */
+.tl-rail-tip { position: absolute; right: calc(100% + 8px); top: 50%; transform: translateY(-50%); white-space: nowrap; background: var(--solid); color: var(--on-solid); font-size: 12px; font-weight: 500; line-height: 1; padding: 5px 9px; border-radius: 7px; box-shadow: 0 6px 18px -6px rgba(60,50,30,.4); opacity: 0; pointer-events: none; transition: opacity .12s; z-index: 60; }
+.tl-rail-btn:hover .tl-rail-tip { opacity: 1; }
 
 /* placeholder (non-doc views, pending Phase 2/3) */
 .tl-placeholder-wrap { flex: 1; display: flex; min-height: 0; }
