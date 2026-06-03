@@ -112,11 +112,12 @@ export interface AgentRunner {
 }
 
 /** The living PRODUCT doc — a user-facing explanation of the service, organized by
- *  feature/page. `## 개요` (what the service is, for whom) and `## 열린 질문` are always
- *  present; each feature grows its own `## <name>` section (무엇 / 동작·정책 / 요소 / 상태).
- *  This is NOT a work log — that lives in history. */
-export const OVERVIEW_HEADING = '## 개요';
-export const OPEN_QUESTIONS_HEADING = '## 열린 질문';
+ *  feature/page. The structural spine `## Overview` and `## Open Questions` is always
+ *  present (English — the service's structural language); each feature grows its own
+ *  `## <name>` section. Section names and prose are written in the user's own
+ *  working language. This is NOT a work log — that lives in history. */
+export const OVERVIEW_HEADING = '## Overview';
+export const OPEN_QUESTIONS_HEADING = '## Open Questions';
 export const SPINE_HEADINGS = [OVERVIEW_HEADING, OPEN_QUESTIONS_HEADING] as const;
 
 /** Scaffold used when no doc exists yet — an empty product-doc skeleton. */
@@ -125,7 +126,7 @@ title: Untitled
 updated:
 ---
 
-## 개요
+## Overview
 
-## 열린 질문
+## Open Questions
 `;

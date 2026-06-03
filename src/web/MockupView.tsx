@@ -62,13 +62,13 @@ export function MockupView({ html, busy }: { html: string | null; busy: boolean 
   const reset = () => setT({ x: 24, y: 24, s: 1 });
 
   if (html === null) {
-    return <div className="tl-placeholder-wrap"><p className="tl-placeholder">불러오는 중…</p></div>;
+    return <div className="tl-placeholder-wrap"><p className="tl-placeholder">Loading…</p></div>;
   }
   if (!html) {
     return (
       <div className="tl-placeholder-wrap">
         <p className="tl-placeholder">
-          {busy ? '생성 중…' : '상단의 "목업 생성"을 누르면 실제 화면을 그대로 재현한 목업을 캔버스에 펼칩니다.'}
+          {busy ? 'Generating…' : 'Press "Generate" at the top to lay out a faithful mockup of the real screens on the canvas.'}
         </p>
       </div>
     );
@@ -82,12 +82,12 @@ export function MockupView({ html, busy }: { html: string | null; busy: boolean 
     >
       <div className="tl-canvas-pan" style={{ transform: `translate(${t.x}px, ${t.y}px) scale(${t.s})` }}>
         {/* pointer-events:none so dragging over the iframe still pans the canvas */}
-        <iframe className="tl-canvas-frame" sandbox="" srcDoc={html} title="목업" />
+        <iframe className="tl-canvas-frame" sandbox="" srcDoc={html} title="Mockup" />
       </div>
       <div className="tl-zoom" onMouseDown={(e) => e.stopPropagation()}>
-        <button type="button" onClick={zoomCenter(1 / 1.2)} title="축소">−</button>
-        <button type="button" onClick={reset} title="100%로">{Math.round(t.s * 100)}%</button>
-        <button type="button" onClick={zoomCenter(1.2)} title="확대">+</button>
+        <button type="button" onClick={zoomCenter(1 / 1.2)} title="Zoom out">−</button>
+        <button type="button" onClick={reset} title="Reset to 100%">{Math.round(t.s * 100)}%</button>
+        <button type="button" onClick={zoomCenter(1.2)} title="Zoom in">+</button>
       </div>
     </div>
   );

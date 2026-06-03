@@ -11,8 +11,8 @@ function fmt(n: number): string {
 }
 function when(ms: number): string {
   const d = new Date(ms);
-  return d.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }) + ' ' +
-    d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' +
+    d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
 
 export function HistoryView() {
@@ -38,8 +38,8 @@ export function HistoryView() {
     return () => { alive = false; };
   }, [sel]);
 
-  if (items === null) return <div className="tl-pad"><p className="tl-placeholder">불러오는 중…</p></div>;
-  if (items.length === 0) return <div className="tl-pad"><p className="tl-placeholder">아직 작업 기록이 없습니다.</p></div>;
+  if (items === null) return <div className="tl-pad"><p className="tl-placeholder">Loading…</p></div>;
+  if (items.length === 0) return <div className="tl-pad"><p className="tl-placeholder">No work yet.</p></div>;
 
   return (
     <div className="tl-pad">
@@ -50,8 +50,8 @@ export function HistoryView() {
             <div className="tl-hist-b">
               <div className="t">{h.title}</div>
               <div className="meta">
-                <span>{h.tools} 도구</span>
-                <span>{fmt(h.tokens)} 토큰</span>
+                <span>{h.tools} tools</span>
+                <span>{fmt(h.tokens)} tokens</span>
               </div>
             </div>
           </button>
@@ -63,18 +63,18 @@ export function HistoryView() {
           <div className="tl-detail" onClick={(e) => e.stopPropagation()}>
             <div className="tl-detail-head">
               <div className="t">{sel.title}</div>
-              <button className="x" type="button" onClick={() => setSel(null)} aria-label="닫기">✕</button>
+              <button className="x" type="button" onClick={() => setSel(null)} aria-label="Close">✕</button>
             </div>
             {detailLoading && !detail ? (
-              <div className="tl-detail-body"><p className="tl-placeholder">불러오는 중…</p></div>
+              <div className="tl-detail-body"><p className="tl-placeholder">Loading…</p></div>
             ) : !detail ? (
-              <div className="tl-detail-body"><p className="tl-placeholder">상세를 불러오지 못했습니다.</p></div>
+              <div className="tl-detail-body"><p className="tl-placeholder">Couldn't load the detail.</p></div>
             ) : (
               <div className="tl-detail-body">
                 <div className="tl-detail-meta">
                   <span>{when(detail.time || sel.time)}</span>
-                  <span>{fmt(detail.tokens)} 토큰</span>
-                  {detail.filesTouched.length ? <span>{detail.filesTouched.length} 파일 변경</span> : null}
+                  <span>{fmt(detail.tokens)} tokens</span>
+                  {detail.filesTouched.length ? <span>{detail.filesTouched.length} files changed</span> : null}
                 </div>
                 {detail.filesTouched.length ? (
                   <div className="tl-detail-files">
@@ -83,7 +83,7 @@ export function HistoryView() {
                 ) : null}
                 {detail.messages.map((m, i) => (
                   <div className={`tl-msg ${m.role}`} key={i}>
-                    <div className="who">{m.role === 'user' ? '나' : 'AI'}</div>
+                    <div className="who">{m.role === 'user' ? 'You' : 'AI'}</div>
                     <div className="bubble">
                       {m.text ? <div className="txt">{m.text}</div> : null}
                       {m.tools.map((t, j) => (

@@ -17,8 +17,8 @@ describe('buildMockupPrompt', () => {
 
   it('forbids re-writing CSS and inventing screens, and demands interrupt states', () => {
     const p = buildMockupPrompt({ doc: '## 개요', css: '', components: '' });
-    expect(p).toContain('CSS를 다시 쓰지'); // do not re-derive CSS
-    expect(p).toContain('만들어내지 마라'); // do not invent screens
-    expect(p).toContain('모달');            // interrupt/overlay states required
+    expect(p).toContain('Do not write CSS'); // do not re-derive CSS
+    expect(p).toContain('Never invent');     // do not invent screens
+    expect(p).toContain('modal');            // interrupt/overlay states required
   });
 });

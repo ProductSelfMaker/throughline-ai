@@ -1,5 +1,5 @@
 // src/web/MainView.tsx
-// Primary region: wordmark + (mockup) 다시 생성 + 다시 정리 on top (no header bar);
+// Primary region: wordmark + (mockup) Generate + Rebuild on top (no header bar);
 // then the active view.
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
@@ -73,23 +73,23 @@ export function MainView({
         <span className="sp" />
         {activeView === 'mockup' ? (
           <button className="tl-gen" type="button" onClick={() => void genMockup()} disabled={mockupBusy}>
-            {Icons.sparkle}{mockupBusy ? '생성 중…' : mockupHtml ? '최신화' : '목업 생성'}
+            {Icons.sparkle}{mockupBusy ? 'Generating…' : mockupHtml ? 'Update' : 'Generate'}
           </button>
         ) : null}
-        <button className="tl-rebtn" type="button" onClick={() => setConfirm(true)} title="최근 기록으로 문서·의사결정을 새로 정리">
+        <button className="tl-rebtn" type="button" onClick={() => setConfirm(true)} title="Rebuild the document from a fresh scan of your codebase">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.3M21 4v4h-4" /></svg>
-          다시 정리
+          Rebuild
         </button>
       </div>
 
       {activeView === 'doc' ? (
         <div className="tl-doc">
           <div className="tl-doc-inner">
-            <div className="tl-kicker">제품 문서 · 자동 생성</div>
+            <div className="tl-kicker">Product doc · auto-generated</div>
             {md.trim() ? (
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{stripFrontmatter(md)}</ReactMarkdown>
             ) : (
-              <p className="tl-placeholder">터미널에서 작업을 시작하면, 기능·페이지별 제품 문서가 여기에 자동으로 정리됩니다.</p>
+              <p className="tl-placeholder">Start working in your terminal and a feature-by-feature product doc fills in here automatically.</p>
             )}
           </div>
         </div>
@@ -106,14 +106,14 @@ export function MainView({
       {confirm ? (
         <div className="tl-modal-overlay" onClick={() => { if (!busy) setConfirm(false); }}>
           <div className="tl-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="tl-modal-title">전체 다시 정리</div>
+            <div className="tl-modal-title">Rebuild document</div>
             <p className="tl-modal-body">
-              현재 문서 내용이 <b>사라지고</b>, 최근 기록(약 14일)을 다시 분석해 문서·의사결정을 새로 정리합니다. 계속할까요?
+              The current document will be <b>replaced</b> and rebuilt from a fresh scan of your codebase. Continue?
             </p>
             <div className="tl-modal-actions">
-              <button className="tl-btn-ghost" type="button" disabled={busy} onClick={() => setConfirm(false)}>취소</button>
+              <button className="tl-btn-ghost" type="button" disabled={busy} onClick={() => setConfirm(false)}>Cancel</button>
               <button className="tl-btn-solid" type="button" disabled={busy} onClick={() => void doRebuild()}>
-                {busy ? '정리 중…' : '계속'}
+                {busy ? 'Rebuilding…' : 'Continue'}
               </button>
             </div>
           </div>

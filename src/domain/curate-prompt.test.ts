@@ -10,6 +10,6 @@ describe('buildCuratePrompt', () => {
     expect(p).toContain('기존');
     for (const h of SPINE_HEADINGS) expect(p).toContain(h);
     expect(p).toContain('x');
-    expect(p).toContain('전체');
+    expect(p).toContain('FULL');
   });
 });

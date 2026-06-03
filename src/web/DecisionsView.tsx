@@ -20,12 +20,12 @@ export function DecisionsView() {
     return () => { alive = false; unsub(); };
   }, []);
 
-  if (md === null) return <div className="tl-pad"><p className="tl-placeholder">불러오는 중…</p></div>;
+  if (md === null) return <div className="tl-pad"><p className="tl-placeholder">Loading…</p></div>;
   if (!md.trim()) {
     return (
       <div className="tl-placeholder-wrap">
         <p className="tl-placeholder">
-          {refreshing ? '최근 활동에서 의사결정을 정리하는 중…' : '아직 의사결정 기록이 없습니다. 최근 활동이 쌓이면 자동으로 추출됩니다.'}
+          {refreshing ? 'Extracting decisions from recent activity…' : 'No decisions yet. They are extracted automatically as activity accumulates.'}
         </p>
       </div>
     );
@@ -33,7 +33,7 @@ export function DecisionsView() {
   return (
     <div className="tl-doc">
       <div className="tl-doc-inner">
-        <div className="tl-kicker">의사결정 · 자동 추출{refreshing ? ' · 갱신 중…' : ''}</div>
+        <div className="tl-kicker">Decisions · auto-extracted{refreshing ? ' · refreshing…' : ''}</div>
         <ReactMarkdown remarkPlugins={[remarkGfm]}>{md}</ReactMarkdown>
       </div>
     </div>

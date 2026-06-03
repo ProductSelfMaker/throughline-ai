@@ -73,8 +73,8 @@ describe('Session (observer)', () => {
     const calls: string[] = [];
     const runner = {
       complete: async (prompt: string) => {
-        if (prompt.includes('제품 분석가다')) { calls.push('map'); return '- 저장 버튼: 클릭 시 문서를 저장한다'; }
-        if (prompt.includes('제품 문서')) { calls.push('reduce'); return DOC; }
+        if (prompt.includes('product analyst')) { calls.push('map'); return '- Save button: saves the document on click'; }
+        if (prompt.includes('write a PRODUCT document')) { calls.push('reduce'); return DOC; }
         calls.push('other'); return DOC; // decisions etc.
       },
     };

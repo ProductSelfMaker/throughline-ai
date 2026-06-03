@@ -6,11 +6,11 @@ import { Icons } from './icons';
 export type ViewId = 'doc' | 'history' | 'decisions' | 'tokens' | 'mockup';
 
 const VIEWS: { id: ViewId; label: string; icon: ReactElement }[] = [
-  { id: 'doc', label: '문서', icon: Icons.doc },
-  { id: 'history', label: '히스토리', icon: Icons.history },
-  { id: 'decisions', label: '의사결정', icon: Icons.decisions },
-  { id: 'tokens', label: '토큰', icon: Icons.tokens },
-  { id: 'mockup', label: '목업', icon: Icons.mockup },
+  { id: 'doc', label: 'Document', icon: Icons.doc },
+  { id: 'history', label: 'History', icon: Icons.history },
+  { id: 'decisions', label: 'Decisions', icon: Icons.decisions },
+  { id: 'tokens', label: 'Tokens', icon: Icons.tokens },
+  { id: 'mockup', label: 'Mockup', icon: Icons.mockup },
 ];
 
 export function ViewRail({
@@ -21,7 +21,7 @@ export function ViewRail({
   onToggle: (v: ViewId) => void;
 }) {
   return (
-    <nav className="tl-region tl-rail" aria-label="뷰">
+    <nav className="tl-region tl-rail" aria-label="Views">
       {VIEWS.map((v) => (
         <button
           key={v.id}

@@ -10,6 +10,6 @@ describe('buildSyncPrompt', () => {
     expect(prompt).toContain('기존');
     expect(prompt).toContain('로그인 만들어줘');
     expect(prompt).toContain('login.tsx');
-    expect(prompt).toContain('전체');
+    expect(prompt).toContain('FULL');
   });
 });
