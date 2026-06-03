@@ -14,9 +14,10 @@ export function App() {
   // Live product doc from the background scribe (session-log → doc).
   useEffect(() => subscribeSpec((u) => setMd(u.md)), []);
 
-  // History/Tokens are derived live from the logs — fetch on entering those views.
+  // Tokens are derived live from the logs — fetch on entering that view.
+  // (History self-fetches its work items.)
   useEffect(() => {
-    if (activeView !== 'history' && activeView !== 'tokens') return;
+    if (activeView !== 'tokens') return;
     let alive = true;
     setAnalyticsLoading(true);
     fetchAnalytics()

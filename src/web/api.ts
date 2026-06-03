@@ -1,8 +1,24 @@
 // src/web/api.ts
-import type { Analytics } from '../domain/types';
+import type { Analytics, WorkItem, WorkItemDetail } from '../domain/types';
 
 export type SpecUpdate = { md: string; changedLines: number[] };
-export type { Analytics };
+export type { Analytics, WorkItem, WorkItemDetail };
+
+/** Recent work items (history cards). */
+export async function fetchWorkItems(limit = 100): Promise<WorkItem[]> {
+  const res = await fetch(`/api/history?limit=${limit}`);
+  if (!res.ok) return [];
+  const data = (await res.json()) as { items?: WorkItem[] };
+  return data.items ?? [];
+}
+
+/** Full conversation/work for one history card. */
+export async function fetchWorkItemDetail(item: WorkItem): Promise<WorkItemDetail | null> {
+  const q = `file=${encodeURIComponent(item.file)}&start=${item.start}&end=${item.end}`;
+  const res = await fetch(`/api/history/item?${q}`);
+  if (!res.ok) return null;
+  return (await res.json()) as WorkItemDetail;
+}
 
 /** Which project directory this instance is observing. */
 export async function fetchInfo(): Promise<{ cwd: string; display: string }> {

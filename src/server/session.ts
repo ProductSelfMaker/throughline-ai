@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { ActivityReader, Analytics, DEFAULT_SPEC } from '../domain/types';
+import { ActivityReader, Analytics, DEFAULT_SPEC, WorkItem, WorkItemDetail } from '../domain/types';
 import { SpecStore } from '../core/spec-store';
 import { IngestStore } from '../core/ingest-store';
 import { Debouncer } from './debouncer';
@@ -247,6 +247,15 @@ export class Session {
   /** Live history + token analytics over recent session logs. */
   analytics(): Promise<Analytics> {
     return this.reader.analyze(ANALYTICS_DAYS, ANALYTICS_MAX_BYTES);
+  }
+
+  /** Recent work items (user turns) for the history view. */
+  workItems(limit: number): Promise<WorkItem[]> {
+    return this.reader.listWorkItems(limit);
+  }
+  /** Full conversation/work for one work item. */
+  workItemDetail(file: string, start: number, end: number): Promise<WorkItemDetail | null> {
+    return this.reader.readWorkItem(file, start, end);
   }
 
   async generateFlow(signal?: AbortSignal): Promise<string> {

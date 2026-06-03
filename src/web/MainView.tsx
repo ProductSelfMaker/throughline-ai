@@ -94,7 +94,7 @@ export function MainView({
           </div>
         </div>
       ) : activeView === 'history' ? (
-        <HistoryView analytics={analytics} loading={analyticsLoading} />
+        <HistoryView />
       ) : activeView === 'tokens' ? (
         <TokensView analytics={analytics} loading={analyticsLoading} />
       ) : activeView === 'decisions' ? (

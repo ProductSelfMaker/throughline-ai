@@ -5,7 +5,7 @@ import { createInterface } from 'node:readline';
 import { homedir } from 'node:os';
 import { join, basename } from 'node:path';
 import chokidar from 'chokidar';
-import { ActivityBatch, ActivityReader, Analytics, SessionSummary } from '../domain/types';
+import { ActivityBatch, ActivityReader, Analytics, SessionSummary, WorkItem, WorkItemDetail, WorkMessage } from '../domain/types';
 
 function dayKey(ts: string | undefined, fallbackMs: number): string {
   const d = ts ? new Date(ts) : new Date(fallbackMs);
@@ -18,6 +18,44 @@ function dayKey(ts: string | undefined, fallbackMs: number): string {
 // cap the excerpt fed to the scribe.
 const DEFAULT_MAX_READ_BYTES = 512 * 1024;
 const DEFAULT_MAX_EXCERPT_CHARS = 12_000;
+
+// Work-item (history card) bounds.
+const WORKITEM_TAIL_BYTES = 16 * 1024 * 1024; // tail window per file when listing turns
+const WORKITEM_MAX_FILES = 40;
+const WORKITEM_DETAIL_MAX = 4 * 1024 * 1024;  // cap a single turn's detail read
+
+interface LogEntry {
+  type?: string;
+  timestamp?: string;
+  message?: { role?: string; content?: unknown; usage?: Record<string, number>; name?: string };
+}
+
+const clip = (s: string, n: number): string => (s.length > n ? s.slice(0, n) + '…' : s);
+const tsMs = (ts: string | undefined, fallback: number): number => {
+  const ms = ts ? Date.parse(ts) : NaN;
+  return Number.isNaN(ms) ? fallback : ms;
+};
+function usageTotal(u: Record<string, number> | undefined): number {
+  if (!u) return 0;
+  return (u.input_tokens || 0) + (u.output_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+}
+// Harness-injected "user" lines that aren't real prompts.
+const NOISE_PROMPT = /^(\[Request interrupted|Caveat:|<command-name>|<command-message>|<local-command-stdout>|<system-reminder>)/;
+
+/** The genuine human prompt text of a line, or null (tool_result / empty / noise). */
+function promptText(o: LogEntry): string | null {
+  if (o.type !== 'user' || o.message?.role !== 'user') return null;
+  const c = o.message?.content;
+  let text: string;
+  if (typeof c === 'string') text = c;
+  else if (Array.isArray(c)) {
+    if ((c as Array<{ type?: string }>).some((b) => b?.type === 'tool_result')) return null;
+    text = textFromContent(c);
+  } else return null;
+  text = text.trim();
+  if (!text || NOISE_PROMPT.test(text)) return null;
+  return text;
+}
 
 /** Claude Code stores per-project sessions under ~/.claude/projects/<dashed cwd>/. */
 export function encodeProjectDir(cwd: string): string {
@@ -255,6 +293,123 @@ export class SessionLogReader implements ActivityReader {
       .slice(0, 14)
       .map(([date, total]) => ({ date, total }));
     return { tokens: { ...tok, perDay: perDayArr }, history, approx };
+  }
+
+  /** Recent work items (one per genuine user turn), newest first. Reads only a
+   *  tail window per file so a giant session can't blow up the scan. */
+  async listWorkItems(limit: number): Promise<WorkItem[]> {
+    const stats: { file: string; size: number; mtime: number }[] = [];
+    for (const f of await this.sessionFiles()) {
+      try { const s = await stat(f); stats.push({ file: f, size: s.size, mtime: s.mtimeMs }); } catch { /* skip */ }
+    }
+    stats.sort((a, b) => b.mtime - a.mtime);
+
+    const items: WorkItem[] = [];
+    for (const { file, size, mtime } of stats.slice(0, WORKITEM_MAX_FILES)) {
+      if (items.length >= limit) break;
+      items.push(...await this.turnsInFile(file, size, mtime));
+    }
+    items.sort((a, b) => b.time - a.time);
+    return items.slice(0, limit);
+  }
+
+  /** Segment one session file's tail window into work items (user turns). */
+  private async turnsInFile(file: string, size: number, mtime: number): Promise<WorkItem[]> {
+    const from = Math.max(0, size - WORKITEM_TAIL_BYTES);
+    const len = size - from;
+    if (len <= 0) return [];
+    const buf = Buffer.alloc(len);
+    const fd = await open(file, 'r');
+    try { await fd.read(buf, 0, len, from); } finally { await fd.close(); }
+
+    // if we started mid-file, drop the leading partial line
+    let base = from;
+    let body = buf;
+    if (from > 0) {
+      const nl = buf.indexOf(0x0a);
+      if (nl === -1) return [];
+      base = from + nl + 1;
+      body = buf.subarray(nl + 1);
+    }
+    const fbase = basename(file).replace(/\.jsonl$/, '');
+    const turns: WorkItem[] = [];
+    let cur: WorkItem | null = null;
+    let pos = 0;
+    while (pos < body.length) {
+      const nl = body.indexOf(0x0a, pos);
+      const lineEnd = nl === -1 ? body.length : nl;
+      const offset = base + pos;
+      const raw = body.subarray(pos, lineEnd).toString('utf8').trim();
+      pos = nl === -1 ? body.length : nl + 1;
+      if (!raw) continue;
+      let o: LogEntry;
+      try { o = JSON.parse(raw); } catch { continue; }
+      const prompt = promptText(o);
+      if (prompt) {
+        if (cur) { cur.end = offset; turns.push(cur); }
+        cur = { id: '', file: fbase, start: offset, end: size, title: clip(prompt, 90), time: tsMs(o.timestamp, mtime), tools: 0, tokens: 0 };
+      } else if (cur && o.type === 'assistant' && o.message?.role === 'assistant') {
+        cur.tokens += usageTotal(o.message?.usage);
+        if (Array.isArray(o.message?.content)) {
+          for (const b of o.message.content as Array<{ type?: string }>) if (b?.type === 'tool_use') cur.tools++;
+        }
+      }
+    }
+    if (cur) { cur.end = size; turns.push(cur); }
+    for (const t of turns) t.id = `${t.file}:${t.start}-${t.end}`;
+    return turns;
+  }
+
+  /** Read one work item's byte range and render its conversation + work. */
+  async readWorkItem(file: string, start: number, end: number): Promise<WorkItemDetail | null> {
+    if (!/^[A-Za-z0-9._-]+$/.test(file)) return null; // no path traversal
+    const full = join(this.dir, file + '.jsonl');
+    if (!existsSync(full)) return null;
+    let size: number;
+    try { size = (await stat(full)).size; } catch { return null; }
+    const from = Math.max(0, Math.min(start, size));
+    const to = Math.min(Math.max(end, from), size, from + WORKITEM_DETAIL_MAX);
+    if (to <= from) return null;
+    const buf = Buffer.alloc(to - from);
+    const fd = await open(full, 'r');
+    try { await fd.read(buf, 0, to - from, from); } finally { await fd.close(); }
+
+    const messages: WorkMessage[] = [];
+    const filesTouched = new Set<string>();
+    let tokens = 0;
+    let title = '';
+    let time = 0;
+    for (const raw of buf.toString('utf8').split('\n')) {
+      const t = raw.trim();
+      if (!t) continue;
+      let o: LogEntry;
+      try { o = JSON.parse(t); } catch { continue; }
+      const role = o.message?.role;
+      if (o.type === 'user' && role === 'user') {
+        const text = textFromContent(o.message?.content).trim();
+        if (!text) continue; // skip tool_result-only "user" entries
+        messages.push({ role: 'user', text, tools: [] });
+        if (!title) title = clip(text, 90);
+        if (!time) time = tsMs(o.timestamp, 0);
+      } else if (o.type === 'assistant' && role === 'assistant') {
+        const text = textFromContent(o.message?.content).trim();
+        const tools: { name: string; target: string }[] = [];
+        if (Array.isArray(o.message?.content)) {
+          for (const b of o.message.content as Array<{ type?: string; name?: string; input?: unknown }>) {
+            if (b?.type === 'tool_use') {
+              const name = b.name || 'tool';
+              const target = toolTarget(b.input);
+              tools.push({ name, target });
+              if (/edit|write|notebook/i.test(name) && target) filesTouched.add(target);
+            }
+          }
+        }
+        tokens += usageTotal(o.message?.usage);
+        if (text || tools.length) messages.push({ role: 'assistant', text, tools });
+      }
+    }
+    if (!messages.length) return null;
+    return { title: title || '(빈 메시지)', time, tokens, filesTouched: [...filesTouched], messages };
   }
 
   watch(onActivity: () => void): () => void {

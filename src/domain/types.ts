@@ -36,6 +36,35 @@ export interface SessionSummary {
   tokens: number;
 }
 
+/** One work item = a single user turn (a prompt and the work until the next prompt).
+ *  Carries the JSONL byte range so its detail can be fetched on demand. */
+export interface WorkItem {
+  id: string;     // `${file}:${start}-${end}`
+  file: string;   // session basename (no .jsonl)
+  start: number;  // byte offset, inclusive
+  end: number;    // byte offset, exclusive
+  title: string;  // the user's prompt (clipped)
+  time: number;   // epoch ms
+  tools: number;  // tool calls within the turn
+  tokens: number; // tokens within the turn
+}
+
+/** One message inside a work item's detail. */
+export interface WorkMessage {
+  role: 'user' | 'assistant';
+  text: string;
+  tools: { name: string; target: string }[];
+}
+
+/** Full conversation + work for a single work item. */
+export interface WorkItemDetail {
+  title: string;
+  time: number;
+  tokens: number;
+  filesTouched: string[];
+  messages: WorkMessage[];
+}
+
 /** Aggregate token usage for the tokens view. */
 export interface TokenStats {
   total: number;
@@ -64,6 +93,10 @@ export interface ActivityReader {
   readRecent(days: number, maxChars: number): Promise<string>;
   /** Derived analytics (history + tokens) over recent logs, byte-bounded. */
   analyze(days: number, maxBytes: number): Promise<Analytics>;
+  /** The most recent `limit` work items (user turns), newest first. */
+  listWorkItems(limit: number): Promise<WorkItem[]>;
+  /** Full conversation/work for one work item (bounded by its byte range). */
+  readWorkItem(file: string, start: number, end: number): Promise<WorkItemDetail | null>;
   watch(onActivity: () => void): () => void;
 }
 

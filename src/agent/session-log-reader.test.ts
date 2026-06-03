@@ -136,3 +136,54 @@ describe('SessionLogReader.currentOffsets', () => {
     expect(Object.keys(offs)).toEqual([s]);
   });
 });
+
+describe('listWorkItems / readWorkItem', () => {
+  const u = (t: string, ts: string) => line({ type: 'user', timestamp: ts, message: { role: 'user', content: t } });
+  const toolResultUser = () => line({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: 'ok' }] } });
+
+  it('splits a session into genuine user turns (newest first) with byte ranges', async () => {
+    const reader = new SessionLogReader({ cwd: CWD, home });
+    const content =
+      u('첫 번째 작업', '2026-06-01T00:00:00Z') +
+      asstLine('네 했어요', { name: 'Write', input: { file_path: 'a.ts' } }) +
+      toolResultUser() +            // tool_result "user" entry — NOT a new turn
+      asstLine('계속') +
+      u('두 번째 작업', '2026-06-02T00:00:00Z') +
+      asstLine('두 번째 응답', { name: 'Edit', input: { file_path: 'b.ts' } });
+    await writeFile(join(sessionDir, 's1.jsonl'), content, 'utf8');
+
+    const items = await reader.listWorkItems(100);
+    expect(items.length).toBe(2);
+    expect(items[0].title).toBe('두 번째 작업');     // newest first
+    expect(items[1].title).toBe('첫 번째 작업');
+    expect(items.every((i) => i.end > i.start)).toBe(true);
+    expect(items[1].tools).toBe(1);                  // the Write in turn 1
+  });
+
+  it('reads one work item: conversation + tools + files touched', async () => {
+    const reader = new SessionLogReader({ cwd: CWD, home });
+    const content =
+      u('첫 번째 작업', '2026-06-01T00:00:00Z') +
+      asstLine('네 했어요', { name: 'Write', input: { file_path: 'a.ts' } }) +
+      toolResultUser() +
+      asstLine('계속') +
+      u('두 번째 작업', '2026-06-02T00:00:00Z') +
+      asstLine('두 번째 응답', { name: 'Edit', input: { file_path: 'b.ts' } });
+    await writeFile(join(sessionDir, 's1.jsonl'), content, 'utf8');
+
+    const items = await reader.listWorkItems(100);
+    const first = items.find((i) => i.title === '첫 번째 작업')!;
+    const detail = await reader.readWorkItem(first.file, first.start, first.end);
+    expect(detail).not.toBeNull();
+    expect(detail!.title).toBe('첫 번째 작업');
+    expect(detail!.filesTouched).toContain('a.ts');
+    expect(detail!.filesTouched).not.toContain('b.ts');  // that's the next turn
+    expect(detail!.messages.some((m) => m.role === 'user' && m.text === '첫 번째 작업')).toBe(true);
+    expect(detail!.messages.some((m) => m.role === 'assistant' && m.tools.some((t) => t.name === 'Write'))).toBe(true);
+  });
+
+  it('rejects path traversal in readWorkItem', async () => {
+    const reader = new SessionLogReader({ cwd: CWD, home });
+    expect(await reader.readWorkItem('../../etc/passwd', 0, 10)).toBeNull();
+  });
+});

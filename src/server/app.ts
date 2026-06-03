@@ -30,6 +30,20 @@ export function createApp(session: Session): Hono {
 
   app.get('/api/analytics', async (c) => c.json(await session.analytics()));
 
+  // history: recent work items (cards) + on-demand detail for one item
+  app.get('/api/history', async (c) => {
+    const limit = Math.min(Math.max(Number(c.req.query('limit')) || 100, 1), 300);
+    return c.json({ items: await session.workItems(limit) });
+  });
+  app.get('/api/history/item', async (c) => {
+    const file = c.req.query('file') ?? '';
+    const start = Number(c.req.query('start'));
+    const end = Number(c.req.query('end'));
+    if (!file || !Number.isFinite(start) || !Number.isFinite(end)) return c.json({ error: 'bad request' }, 400);
+    const detail = await session.workItemDetail(file, start, end);
+    return detail ? c.json(detail) : c.json({ error: 'not found' }, 404);
+  });
+
   // stale-while-revalidate: return the cached doc instantly, refresh in the
   // background if stale (result arrives via the 'decisions-updated' SSE event).
   app.get('/api/decisions', async (c) => {

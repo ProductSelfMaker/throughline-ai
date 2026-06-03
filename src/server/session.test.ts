@@ -22,6 +22,8 @@ class FakeReader implements ActivityReader {
   async analyze() {
     return { tokens: { total: 0, input: 0, output: 0, cacheRead: 0, cacheCreate: 0, turns: 0, tools: 0, perDay: [] }, history: [], approx: false };
   }
+  async listWorkItems() { return []; }
+  async readWorkItem() { return null; }
   watch(): () => void { return () => {}; }
 }
 const completer = (reply: string) => ({ complete: async () => reply });

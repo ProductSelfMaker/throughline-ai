@@ -16,6 +16,8 @@ const idleReader: ActivityReader = {
   async analyze() {
     return { tokens: { total: 0, input: 0, output: 0, cacheRead: 0, cacheCreate: 0, turns: 0, tools: 0, perDay: [] }, history: [], approx: false };
   },
+  async listWorkItems() { return []; },
+  async readWorkItem() { return null; },
   watch() { return () => {}; },
 };
 
@@ -72,6 +74,16 @@ describe('/api/mockup', () => {
     const { html } = (await post.json()) as { html: string };
     expect(html.startsWith('<!doctype html')).toBe(true);
     expect(html).toContain('<div class="mock-canvas">m</div>'); // fragment wrapped into a full doc
+  });
+});
+
+describe('/api/history', () => {
+  it('lists work items and validates the detail request', async () => {
+    session = mk();
+    const app = createApp(session);
+    expect(await (await app.request('/api/history')).json()).toEqual({ items: [] });
+    expect((await app.request('/api/history/item')).status).toBe(400);          // missing params
+    expect((await app.request('/api/history/item?file=s1&start=0&end=10')).status).toBe(404); // none
   });
 });
 
