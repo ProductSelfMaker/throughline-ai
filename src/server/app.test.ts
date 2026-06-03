@@ -76,10 +76,10 @@ describe('/api/mockup', () => {
 });
 
 describe('GET /api/decisions', () => {
-  it('returns the decisions doc ("" when none yet)', async () => {
+  it('returns the cached decisions doc + refreshing flag ("" / false when none yet)', async () => {
     session = mk();
     const res = await createApp(session).request('/api/decisions');
-    expect(await res.json()).toEqual({ md: '' });
+    expect(await res.json()).toEqual({ md: '', refreshing: false });
   });
 });
 

@@ -107,26 +107,37 @@ describe('Session (observer)', () => {
     expect(await ingest.load()).toEqual({ '/x/s1.jsonl': 77 });
   });
 
-  it('ensureDecisions regenerates when activity changed, and serves cache otherwise', async () => {
+  it('refreshDecisionsIfStale: background-regenerates on change, serves cache when unchanged', async () => {
     const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
     let offsets: Record<string, number> = { '/x/s1.jsonl': 10 };
     const reader = new FakeReader({ excerpt: '', advanced: {} }, {}, '사용자: 로그인 결정');
     reader.currentOffsets = async () => offsets; // mutable for the test
     let calls = 0;
     const runner = { complete: async () => { calls += 1; return `## 의사결정 ${calls}`; } };
-    session = new Session({ store, runner, reader, ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '' });
+    session = new Session({
+      store, runner, reader, ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '',
+      decisionsCooldownMs: 0, // pure mark-based staleness for the test
+    });
+    const nextUpdate = () => new Promise<string>((res) => {
+      const off = session!.broadcaster.subscribe((ev, d) => { if (ev === 'decisions-updated') { off?.(); res((d as { md: string }).md); } });
+    });
 
-    const first = await session.ensureDecisions();   // no prior mark → generate
-    expect(first).toBe('## 의사결정 1');
+    // first open: no cache → background refresh kicked off, result broadcast
+    let upd = nextUpdate();
+    expect(await session.refreshDecisionsIfStale()).toBe(true);
+    expect(await upd).toBe('## 의사결정 1');
+    expect(await session.readDecisions()).toBe('## 의사결정 1');
     expect(calls).toBe(1);
 
-    const second = await session.ensureDecisions();  // same offsets → cached, no LLM
-    expect(second).toBe('## 의사결정 1');
+    // same offsets → not stale → serves cache, no LLM
+    expect(await session.refreshDecisionsIfStale()).toBe(false);
     expect(calls).toBe(1);
 
-    offsets = { '/x/s1.jsonl': 99 };                  // new activity → regenerate
-    const third = await session.ensureDecisions();
-    expect(third).toBe('## 의사결정 2');
+    // new activity → background refresh again
+    offsets = { '/x/s1.jsonl': 99 };
+    upd = nextUpdate();
+    expect(await session.refreshDecisionsIfStale()).toBe(true);
+    expect(await upd).toBe('## 의사결정 2');
     expect(calls).toBe(2);
   });
 

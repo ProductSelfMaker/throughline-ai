@@ -87,6 +87,9 @@ export interface SessionDeps {
   /** Reads the observed project's full source (for the code-grounded rebuild).
    *  Defaults to scanning the project cwd; injectable for tests. */
   projectCode?: (cwd: string) => Promise<ProjectCode>;
+  /** How long to wait before a decisions background-refresh may re-run (ms).
+   *  Default 3 min; set 0 in tests for pure mark-based staleness. */
+  decisionsCooldownMs?: number;
 }
 
 /** Observer: reads the user's agent session logs and keeps the PRD live. */
@@ -104,6 +107,7 @@ export class Session {
   private projectCode: (cwd: string) => Promise<ProjectCode>;
   private decisionsPath: string;
   private decisionsStatePath: string;
+  private decisionsCooldownMs: number;
   private mockupPath: string;
   private checkpoint: Record<string, number> = {};
   private unwatch?: () => void;
@@ -120,6 +124,7 @@ export class Session {
     this.projectCode = deps.projectCode ?? collectProjectFiles;
     this.decisionsPath = join(deps.cwd, '.throughline', 'decisions.md');
     this.decisionsStatePath = join(deps.cwd, '.throughline', 'decisions-state.json');
+    this.decisionsCooldownMs = deps.decisionsCooldownMs ?? 180_000;
     this.mockupPath = join(deps.cwd, '.throughline', 'mockup.html');
   }
 
@@ -165,37 +170,53 @@ export class Session {
     try { return Object.values(await this.reader.currentOffsets()).reduce((a, b) => a + b, 0); }
     catch { return -1; }
   }
-  private async readDecisionsMark(): Promise<number | null> {
-    try { return JSON.parse(await readFile(this.decisionsStatePath, 'utf8')).mark ?? null; }
-    catch { return null; }
+  private async readDecisionsState(): Promise<{ mark: number; ts: number } | null> {
+    try {
+      const s = JSON.parse(await readFile(this.decisionsStatePath, 'utf8'));
+      return { mark: s.mark ?? -1, ts: s.ts ?? 0 };
+    } catch { return null; }
   }
-  private async writeDecisionsMark(mark: number): Promise<void> {
+  private async writeDecisionsState(mark: number, ts: number): Promise<void> {
     try {
       await mkdir(dirname(this.decisionsStatePath), { recursive: true });
-      await writeFile(this.decisionsStatePath, JSON.stringify({ mark }), 'utf8');
+      await writeFile(this.decisionsStatePath, JSON.stringify({ mark, ts }), 'utf8');
     } catch { /* best-effort */ }
   }
 
-  /** Decisions, refreshed on open: regenerate from recent activity only when the
-   *  logs have changed since the last generation; otherwise return the cached doc. */
-  async ensureDecisions(): Promise<string> {
-    const existing = await this.readDecisions();
+  /** Decide whether decisions are stale and, if so, regenerate in the BACKGROUND.
+   *  Returns true if a refresh was kicked off (the view shows cached meanwhile and
+   *  gets the result via a 'decisions-updated' broadcast). Cheap checks only —
+   *  never blocks on the LLM. A cooldown avoids re-spending tokens on rapid reopens
+   *  (in active use the logs change constantly, so mark alone would always fire). */
+  async refreshDecisionsIfStale(now: number = Date.now()): Promise<boolean> {
     try {
+      const existing = await this.readDecisions();
       const mark = await this.activityMark();
-      const prevMark = await this.readDecisionsMark();
-      if (existing && prevMark !== null && prevMark === mark) return existing; // up to date
+      if (!existing && mark <= 0) return false; // nothing cached and no activity to extract
+      const state = await this.readDecisionsState();
+      if (existing) {
+        if (state && state.mark === mark) return false;                       // nothing new
+        if (state && now - state.ts < this.decisionsCooldownMs) return false; // throttled
+      }
+      void this.regenerateDecisions(mark, now);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
+  private async regenerateDecisions(mark: number, now: number): Promise<void> {
+    try {
       const excerpt = await this.reader.readRecent(REBUILD_DAYS, REBUILD_MAX_CHARS).catch(() => '');
-      if (!excerpt.trim()) return existing; // nothing to extract from — keep what we have
+      if (!excerpt.trim()) return;
       const dec = await this.runner.complete(buildDecisionsPrompt(excerpt));
       if (dec.trim()) {
         await this.writeDecisions(dec);
-        await this.writeDecisionsMark(mark);
-        return dec;
+        await this.writeDecisionsState(mark, now);
+        this.broadcaster.broadcast('decisions-updated', { md: dec });
       }
-      return existing;
     } catch {
-      return existing; // best-effort; never fail the view
+      // keep the previous decisions doc
     }
   }
 

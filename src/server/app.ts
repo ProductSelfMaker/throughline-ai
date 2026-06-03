@@ -21,8 +21,13 @@ export function createApp(session: Session): Hono {
 
   app.get('/api/analytics', async (c) => c.json(await session.analytics()));
 
-  // refresh-on-open: regenerates from recent activity only when logs changed
-  app.get('/api/decisions', async (c) => c.json({ md: await session.ensureDecisions() }));
+  // stale-while-revalidate: return the cached doc instantly, refresh in the
+  // background if stale (result arrives via the 'decisions-updated' SSE event).
+  app.get('/api/decisions', async (c) => {
+    const md = await session.readDecisions();
+    const refreshing = await session.refreshDecisionsIfStale();
+    return c.json({ md, refreshing });
+  });
 
   app.get('/api/mockup', async (c) => c.json({ html: await session.readMockup() }));
   app.post('/api/mockup', async (c) => c.json({ html: await session.generateMockup() }));

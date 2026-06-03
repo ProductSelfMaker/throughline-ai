@@ -34,12 +34,19 @@ export async function rebuild(): Promise<void> {
   if (!res.ok) throw new Error(`rebuild failed (${res.status})`);
 }
 
-/** The latest generated decisions doc ('' if none). */
-export async function fetchDecisions(): Promise<string> {
+/** The cached decisions doc + whether a background refresh was started. */
+export async function fetchDecisions(): Promise<{ md: string; refreshing: boolean }> {
   const res = await fetch('/api/decisions');
-  if (!res.ok) return '';
-  const data = (await res.json()) as { md?: string };
-  return data.md ?? '';
+  if (!res.ok) return { md: '', refreshing: false };
+  const data = (await res.json()) as { md?: string; refreshing?: boolean };
+  return { md: data.md ?? '', refreshing: data.refreshing ?? false };
+}
+
+/** Subscribe to background decisions refreshes (SSE 'decisions-updated'). */
+export function subscribeDecisions(onUpdate: (md: string) => void): () => void {
+  const es = new EventSource('/api/events');
+  es.addEventListener('decisions-updated', (e) => onUpdate(JSON.parse((e as MessageEvent).data).md));
+  return () => es.close();
 }
 
 /** The latest generated mockup HTML ('' if none). */
