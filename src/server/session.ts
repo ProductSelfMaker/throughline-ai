@@ -182,6 +182,7 @@ export class Session {
    *  DOM as artboards — so the mockup matches the running app instead of an
    *  LLM re-derivation. Data comes from the product doc, inferred from UI for gaps. */
   async generateMockup(): Promise<string> {
+    let failure: unknown;
     await this.runBusy(async () => {
       const doc = await this.store.read();
       try {
@@ -192,10 +193,11 @@ export class Session {
           await mkdir(dirname(this.mockupPath), { recursive: true });
           await writeFile(this.mockupPath, html, 'utf8');
         }
-      } catch {
-        // keep the previous mockup
+      } catch (e) {
+        failure = e; // keep the previous mockup, but surface the failure to the job
       }
     });
+    if (failure) throw failure instanceof Error ? failure : new Error(String(failure));
     return this.readMockup();
   }
 
@@ -543,14 +545,16 @@ export class Session {
    *  Generated only on demand (this job) — not continuously ingested. Keeps the previous doc
    *  on empty/failure. */
   async rebuildArchitecture(): Promise<void> {
+    let failure: unknown;
     await this.runBusy(async () => {
       try {
         const next = await this.buildArchFromCode();
         if (next.trim()) await this.writeArchitecture(next);
-      } catch {
-        // keep the previous architecture doc
+      } catch (e) {
+        failure = e; // keep the previous doc, but surface the failure to the job
       }
     });
+    if (failure) throw failure instanceof Error ? failure : new Error(String(failure));
   }
 
   /** Deep, code-grounded architecture overview. Reads the whole project (bounded), extracts
@@ -560,10 +564,14 @@ export class Session {
     if (files.length === 0) return '';
 
     const chunks = chunkByBudget(files, MAP_CHUNK_BUDGET);
+    let mapErr: unknown;
     const maps = (await pool(chunks, MAP_CONCURRENCY, (c) =>
-      this.runner.complete(buildArchMapPrompt(c.label, c.text)).catch(() => ''),
+      this.runner.complete(buildArchMapPrompt(c.label, c.text)).catch((e) => { mapErr = e; return ''; }),
     )).filter((s) => s.trim());
-    if (maps.length === 0) return '';
+    if (maps.length === 0) {
+      if (mapErr) throw mapErr; // all map calls failed (e.g. overload) → surface, don't silently no-op
+      return '';                // genuinely no architecture extracted
+    }
 
     const ctx: ArchContext = {
       manifest: files.find((f) => /(^|\/)package\.json$/i.test(f.path))?.content,

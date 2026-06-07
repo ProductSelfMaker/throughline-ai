@@ -309,6 +309,40 @@ describe('Session (observer)', () => {
     expect(md).toBe(ARCH);
   });
 
+  it('a failed mockup generation reports error and keeps the previous mockup', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    await store.write('## 개요\n앱\n');
+    const { writeFile, mkdir } = await import('node:fs/promises');
+    await mkdir(join(dir, '.throughline'), { recursive: true });
+    await writeFile(join(dir, '.throughline', 'mockup.html'), '<old-mockup/>', 'utf8');
+    const runner = { complete: async () => { throw new Error('API Error: 529 overloaded'); } };
+    session = new Session({
+      store, runner, reader: new FakeReader({ excerpt: '', advanced: {} }), ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '',
+      uiSource: async () => ({ css: '', components: '', headLinks: '' }),
+    });
+    const settled = new Promise<string>((res) => {
+      session!.broadcaster.subscribe((ev, d) => { if (ev === 'job-updated' && (d as { status: string }).status !== 'running') res((d as { status: string }).status); });
+    });
+    expect(session.startJob('mockup')).toBe(true);
+    expect(await settled).toBe('error');                       // honest failure (not a fake "done")
+    expect(await session.readMockup()).toBe('<old-mockup/>');  // previous mockup preserved
+  });
+
+  it('a failed architecture rebuild reports error and writes nothing', async () => {
+    const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
+    const runner = { complete: async () => { throw new Error('529 Overloaded'); } };
+    session = new Session({
+      store, runner, reader: new FakeReader({ excerpt: '', advanced: {} }), ingest: new IngestStore(dir), cwd: dir, gitDiff: async () => '',
+      projectCode: async () => ({ files: [{ path: 'a.ts', content: 'x' }], truncated: false }),
+    });
+    const settled = new Promise<string>((res) => {
+      session!.broadcaster.subscribe((ev, d) => { if (ev === 'job-updated' && (d as { status: string }).status !== 'running') res((d as { status: string }).status); });
+    });
+    expect(session.startJob('architecture')).toBe(true);
+    expect(await settled).toBe('error');
+    expect(await session.readArchitecture()).toBe('');
+  });
+
   it('rebuildDecisions discards the old ledger and re-extracts from current turns', async () => {
     const store = new SpecStore(join(dir, '.throughline', 'doc.md'));
     const { writeFile, mkdir } = await import('node:fs/promises');
