@@ -5,13 +5,17 @@
 // keeps a single SSE stream across switches.
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
-import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rename, rm } from 'node:fs/promises';
 import { Broadcaster } from './broadcaster';
 import { ActivityReader } from '../domain/types';
 import { Session } from './session';
+import { buildMergePrompt, extractConflicts, type Conflict } from '../domain/merge-prompt';
+import { buildResolvePrompt } from '../domain/resolve-prompt';
 
 export interface WorkspaceInfo { id: string; name: string; isDefault: boolean }
 interface Registry { active: string; workspaces: { id: string; name: string }[] }
+interface Completer { complete(prompt: string): Promise<string> }
+export interface Unified { md: string; conflicts: Conflict[] }
 
 const DEFAULT_ID = 'default';
 // artifacts that lived directly in .throughline/ before workspaces — migrated into ws/default.
@@ -23,6 +27,8 @@ const LEGACY_FILES = [
 export interface WorkspaceManagerDeps {
   cwd: string;
   reader: ActivityReader;
+  /** Shared completer for cross-workspace ops (unified merge + conflict resolution). */
+  runner: Completer;
   /** Build a Session for a workspace, pointed at its artifacts dir, sharing the broadcaster. */
   makeSession: (opts: { id: string; artifactsDir: string; broadcaster: Broadcaster }) => Session;
 }
@@ -31,8 +37,11 @@ export class WorkspaceManager {
   readonly broadcaster = new Broadcaster();
   private cwd: string;
   private reader: ActivityReader;
+  private runner: Completer;
   private makeSession: WorkspaceManagerDeps['makeSession'];
   private registryPath: string;
+  private unifiedPath: string;
+  private unifiedConflictsPath: string;
   private wsRoot: string;
   private registry: Registry = { active: DEFAULT_ID, workspaces: [{ id: DEFAULT_ID, name: 'Default' }] };
   private sessions = new Map<string, Session>();
@@ -42,8 +51,11 @@ export class WorkspaceManager {
   constructor(deps: WorkspaceManagerDeps) {
     this.cwd = deps.cwd;
     this.reader = deps.reader;
+    this.runner = deps.runner;
     this.makeSession = deps.makeSession;
     this.registryPath = join(deps.cwd, '.throughline', 'workspaces.json');
+    this.unifiedPath = join(deps.cwd, '.throughline', 'unified.md');
+    this.unifiedConflictsPath = join(deps.cwd, '.throughline', 'unified-conflicts.json');
     this.wsRoot = join(deps.cwd, '.throughline', 'ws');
   }
 
@@ -122,6 +134,63 @@ export class WorkspaceManager {
     this.broadcaster.broadcast('decisions-updated', { items: await s.readDecisions() });
     this.broadcaster.broadcast('workspace-changed', this.activeInfo());
     return true;
+  }
+
+  /** Delete a non-default workspace (the fixed "Default" can't be removed). */
+  async remove(id: string): Promise<boolean> {
+    if (id === DEFAULT_ID || !this.sessions.has(id)) return false;
+    this.sessions.get(id)?.stop();
+    this.sessions.delete(id);
+    this.registry.workspaces = this.registry.workspaces.filter((w) => w.id !== id);
+    if (this.registry.active === id) this.registry.active = DEFAULT_ID; // fall back to default
+    await this.save();
+    await rm(this.dir(id), { recursive: true, force: true }).catch(() => { /* best-effort */ });
+    return true;
+  }
+
+  private async allWorkspaceDocs(): Promise<{ name: string; md: string }[]> {
+    const out: { name: string; md: string }[] = [];
+    for (const w of this.registry.workspaces) {
+      const s = this.sessions.get(w.id);
+      if (s) out.push({ name: w.name, md: await s.readSpec() });
+    }
+    return out;
+  }
+
+  private async writeUnified(u: Unified): Promise<void> {
+    await mkdir(join(this.cwd, '.throughline'), { recursive: true });
+    await writeFile(this.unifiedPath, u.md, 'utf8');
+    await writeFile(this.unifiedConflictsPath, JSON.stringify(u.conflicts), 'utf8');
+  }
+
+  /** The latest unified doc + open conflicts ('' / [] when never merged). */
+  async readUnified(): Promise<Unified> {
+    let md = '';
+    let conflicts: Conflict[] = [];
+    try { if (existsSync(this.unifiedPath)) md = await readFile(this.unifiedPath, 'utf8'); } catch { md = ''; }
+    try { if (existsSync(this.unifiedConflictsPath)) conflicts = JSON.parse(await readFile(this.unifiedConflictsPath, 'utf8')); } catch { conflicts = []; }
+    return { md, conflicts: Array.isArray(conflicts) ? conflicts : [] };
+  }
+
+  /** Merge every workspace's doc into one. 0–1 workspace → passthrough (no LLM call). */
+  async mergeAll(): Promise<Unified> {
+    const docs = await this.allWorkspaceDocs();
+    const u: Unified = docs.length <= 1
+      ? { md: docs[0]?.md ?? '', conflicts: [] }
+      : extractConflicts(await this.runner.complete(buildMergePrompt(docs)));
+    await this.writeUnified(u);
+    return u;
+  }
+
+  /** Apply the user's chat answer to one conflict; updates the unified doc, drops the conflict. */
+  async resolveConflict(id: string, answer: string): Promise<Unified> {
+    const cur = await this.readUnified();
+    const conflict = cur.conflicts.find((c) => c.id === id);
+    if (!conflict) return cur;
+    const md = (await this.runner.complete(buildResolvePrompt(cur.md, conflict.question, answer))).trim() || cur.md;
+    const u: Unified = { md, conflicts: cur.conflicts.filter((c) => c.id !== id) };
+    await this.writeUnified(u);
+    return u;
   }
 
   flush(): void { this.active().flush(); }

@@ -142,6 +142,23 @@ export async function createWorkspace(name: string): Promise<WorkspaceInfo> {
 export async function selectWorkspace(id: string): Promise<void> {
   await fetch(`/api/workspaces/${id}/select`, { method: 'POST' });
 }
+export async function deleteWorkspace(id: string): Promise<void> {
+  await fetch(`/api/workspaces/${id}/delete`, { method: 'POST' });
+}
+
+/** Unified merge of all workspaces + chat conflict resolution. */
+export interface Conflict { id: string; question: string }
+export interface Unified { md: string; conflicts: Conflict[] }
+export async function mergeUnified(): Promise<Unified> {
+  const res = await fetch('/api/unified/merge', { method: 'POST' });
+  if (!res.ok) throw new Error(`merge failed (${res.status})`);
+  return res.json();
+}
+export async function resolveConflict(id: string, answer: string): Promise<Unified> {
+  const res = await fetch('/api/unified/resolve', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, answer }) });
+  if (!res.ok) throw new Error(`resolve failed (${res.status})`);
+  return res.json();
+}
 /** Subscribe to active-workspace changes (SSE 'workspace-changed'). */
 export function subscribeWorkspace(onChange: (active: WorkspaceInfo) => void): () => void {
   const es = new EventSource('/api/events');

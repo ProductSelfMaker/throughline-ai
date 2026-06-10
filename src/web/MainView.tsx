@@ -7,6 +7,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { fetchMockup, fetchArchitecture, fetchDocFreshness, fetchInfo, subscribeStatus, fetchWorkspaces, createWorkspace, selectWorkspace, type AnalyticsResponse, type JobKind, type Freshness, type WorkspaceInfo } from './api';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
+import { MergeView } from './MergeView';
 import { HistoryView } from './HistoryView';
 import { TokensView } from './TokensView';
 import { DecisionsView } from './DecisionsView';
@@ -61,6 +62,9 @@ export function MainView({
   running,
   start,
   doneCounts,
+  mergeMode,
+  onMerge,
+  onCloseMerge,
 }: {
   activeView: ViewId;
   md: string;
@@ -69,6 +73,9 @@ export function MainView({
   running: Set<JobKind>;
   start: (kind: JobKind) => void;
   doneCounts: Record<JobKind, number>;
+  mergeMode: boolean;
+  onMerge: () => void;
+  onCloseMerge: () => void;
 }) {
   const [confirm, setConfirm] = useState(false);
   const [activeWs, setActiveWs] = useState<WorkspaceInfo | null>(null);
@@ -133,7 +140,18 @@ export function MainView({
             {Icons.sparkle}{mockupBusy ? 'Generating…' : mockupHtml ? 'Update' : 'Generate'}
           </button>
         ) : null}
-        {activeView === 'doc' && codeGenAllowed ? (
+        {activeView === 'doc' && codeGenAllowed && !mergeMode ? (
+          <button
+            className="tl-rebtn"
+            type="button"
+            onClick={onMerge}
+            title="Merge all workspaces into one document; resolve conflicts in chat"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M7 4v5a4 4 0 0 0 4 4h6M7 20v-5M17 9l3 4-3 4" /></svg>
+            Merge
+          </button>
+        ) : null}
+        {activeView === 'doc' && codeGenAllowed && !mergeMode ? (
           <button
             className="tl-rebtn"
             type="button"
@@ -145,7 +163,7 @@ export function MainView({
             {tidying ? 'Tidying…' : 'Tidy'}
           </button>
         ) : null}
-        {rebuildKind && codeGenAllowed ? (
+        {rebuildKind && codeGenAllowed && !mergeMode ? (
           <button
             className="tl-rebtn"
             type="button"
@@ -159,9 +177,11 @@ export function MainView({
         ) : null}
       </div>
 
-      <div className="tl-viewhead">{VIEW_LABEL[activeView]}</div>
+      <div className="tl-viewhead">{mergeMode ? 'Merge' : VIEW_LABEL[activeView]}</div>
 
-      {activeView === 'doc' ? (
+      {mergeMode ? (
+        <MergeView onClose={onCloseMerge} />
+      ) : activeView === 'doc' ? (
         <div className="tl-doc">
           <div className="tl-doc-inner">
             {docFresh && docFresh.stale.length ? (

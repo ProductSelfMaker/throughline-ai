@@ -4,7 +4,7 @@ import { streamSSE } from 'hono/streaming';
 import { homedir } from 'node:os';
 import { Session, isJobKind } from './session';
 import type { Broadcaster } from './broadcaster';
-import type { WorkspaceInfo } from './workspace-manager';
+import type { WorkspaceInfo, Unified } from './workspace-manager';
 
 /** What the HTTP layer needs: the active workspace's Session + workspace management. */
 export interface AppHost {
@@ -14,6 +14,10 @@ export interface AppHost {
   activeInfo(): WorkspaceInfo;
   create(name: string): Promise<WorkspaceInfo>;
   select(id: string): Promise<boolean>;
+  remove(id: string): Promise<boolean>;
+  mergeAll(): Promise<Unified>;
+  resolveConflict(id: string, answer: string): Promise<Unified>;
+  readUnified(): Promise<Unified>;
 }
 
 export function createApp(host: AppHost): Hono {
@@ -38,6 +42,19 @@ export function createApp(host: AppHost): Hono {
   app.post('/api/workspaces/:id/select', async (c) => {
     const ok = await host.select(c.req.param('id'));
     return ok ? c.json({ ok: true, active: host.activeInfo() }) : c.json({ error: 'unknown or already active' }, 400);
+  });
+  app.post('/api/workspaces/:id/delete', async (c) => {
+    const ok = await host.remove(c.req.param('id'));
+    return ok ? c.json({ ok: true }) : c.json({ error: 'cannot delete (default or unknown)' }, 400);
+  });
+
+  // unified merge of all workspaces + chat conflict resolution (default workspace only)
+  app.get('/api/unified', async (c) => c.json(await host.readUnified()));
+  app.post('/api/unified/merge', async (c) => c.json(await host.mergeAll()));
+  app.post('/api/unified/resolve', async (c) => {
+    const body = await c.req.json<{ id?: string; answer?: string }>().catch(() => ({} as { id?: string; answer?: string }));
+    if (!body.id || !(body.answer ?? '').trim()) return c.json({ error: 'id and answer required' }, 400);
+    return c.json(await host.resolveConflict(body.id, body.answer!.trim()));
   });
 
   app.post('/api/curate', async (c) => {

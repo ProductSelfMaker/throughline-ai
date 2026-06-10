@@ -43,12 +43,14 @@ mkdirSync(scribeDir, { recursive: true });
 // One shared session-log reader (the user's single terminal session), partitioned across
 // workspaces by active periods. Each workspace gets its own artifacts + checkpoint.
 const reader = new SessionLogReader({ cwd });
+const sharedRunner = new ClaudeCodeRunner({ cwd: scribeDir }); // also used for cross-workspace merge
 const manager = new WorkspaceManager({
   cwd,
   reader,
+  runner: sharedRunner,
   makeSession: ({ artifactsDir, broadcaster }) => new Session({
     store: new SpecStore(join(artifactsDir, 'prd.md')),
-    runner: new ClaudeCodeRunner({ cwd: scribeDir }),
+    runner: sharedRunner,
     reader,
     selfReader: new SessionLogReader({ cwd: scribeDir }),
     ingest: new IngestStore(cwd, join(artifactsDir, 'ingest-state.json')),

@@ -47,6 +47,10 @@ function host(s: Session) {
     activeInfo: () => DEF,
     create: async (name: string) => ({ id: 'ws1', name, isDefault: false }),
     select: async () => true,
+    remove: async (id: string) => id !== 'default',
+    mergeAll: async () => ({ md: '## Overview\nMERGED', conflicts: [{ id: 'c1', question: 'A vs B?' }] }),
+    resolveConflict: async (_id: string, _answer: string) => ({ md: '## Overview\nRESOLVED', conflicts: [] }),
+    readUnified: async () => ({ md: '', conflicts: [] }),
   };
 }
 
@@ -188,5 +192,26 @@ describe('/api/workspaces', () => {
     expect(created).toEqual({ id: 'ws1', name: 'Beta', isDefault: false });
     const sel = await app.request('/api/workspaces/ws1/select', { method: 'POST' });
     expect(await sel.json()).toEqual({ ok: true, active: DEF });
+  });
+
+  it('deletes a non-default workspace (400 for default)', async () => {
+    session = mk();
+    const app = createApp(host(session));
+    expect((await app.request('/api/workspaces/default/delete', { method: 'POST' })).status).toBe(400);
+    expect(await (await app.request('/api/workspaces/ws1/delete', { method: 'POST' })).json()).toEqual({ ok: true });
+  });
+});
+
+describe('/api/unified', () => {
+  it('merges and resolves conflicts', async () => {
+    session = mk();
+    const app = createApp(host(session));
+    const merged = await (await app.request('/api/unified/merge', { method: 'POST' })).json();
+    expect(merged).toEqual({ md: '## Overview\nMERGED', conflicts: [{ id: 'c1', question: 'A vs B?' }] });
+    expect((await app.request('/api/unified/resolve', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: 'c1' }) })).status).toBe(400); // answer required
+    const resolved = await (await app.request('/api/unified/resolve', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: 'c1', answer: '자동' }),
+    })).json();
+    expect(resolved).toEqual({ md: '## Overview\nRESOLVED', conflicts: [] });
   });
 });

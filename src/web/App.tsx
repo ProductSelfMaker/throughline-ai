@@ -13,12 +13,15 @@ export function App() {
   const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [wsTick, setWsTick] = useState(0); // bumps on workspace switch → remounts the view
+  const [mergeMode, setMergeMode] = useState(false); // unified merge view (default workspace)
   const jobs = useJobs();
 
   // Live product doc from the background scribe (session-log → doc).
   useEffect(() => subscribeSpec((u) => setMd(u.md)), []);
-  // Active-workspace changes: remount the view so per-workspace content refetches.
-  useEffect(() => subscribeWorkspace(() => setWsTick((n) => n + 1)), []);
+  // Active-workspace changes: remount the view so per-workspace content refetches; leave merge.
+  useEffect(() => subscribeWorkspace(() => { setWsTick((n) => n + 1); setMergeMode(false); }), []);
+  // Leaving the doc view exits the merge flow.
+  useEffect(() => { if (activeView !== 'doc') setMergeMode(false); }, [activeView]);
 
   // Tokens are derived live from the logs — fetch on entering that view (and on workspace switch).
   // (History self-fetches its work items.)
@@ -44,9 +47,12 @@ export function App() {
         running={jobs.running}
         start={jobs.start}
         doneCounts={jobs.doneCounts}
+        mergeMode={mergeMode}
+        onMerge={() => setMergeMode(true)}
+        onCloseMerge={() => setMergeMode(false)}
       />
       <ViewRail active={activeView} onToggle={setActiveView} />
-      {activeView === 'doc' ? <ScribeChat /> : null}
+      {activeView === 'doc' && !mergeMode ? <ScribeChat /> : null}
       <Toaster toasts={jobs.toasts} onDismiss={jobs.dismiss} />
     </div>
   );

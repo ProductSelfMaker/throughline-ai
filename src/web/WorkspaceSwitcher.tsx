@@ -3,13 +3,20 @@
 // Selecting routes future activity to that workspace (server-side); the app remounts the
 // view (App keys on 'workspace-changed') so per-workspace content refetches.
 import { useEffect, useRef, useState } from 'react';
-import { fetchWorkspaces, createWorkspace, selectWorkspace, type WorkspaceInfo } from './api';
+import { fetchWorkspaces, createWorkspace, selectWorkspace, deleteWorkspace, type WorkspaceInfo } from './api';
 
 export function WorkspaceSwitcher({ onActive }: { onActive: (ws: WorkspaceInfo) => void }) {
   const [list, setList] = useState<WorkspaceInfo[]>([]);
   const [activeId, setActiveId] = useState('default');
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+
+  const reload = () => fetchWorkspaces().then(({ active, workspaces }) => {
+    setList(workspaces);
+    setActiveId(active);
+    const a = workspaces.find((w) => w.id === active);
+    if (a) onActive(a);
+  }).catch(() => {});
 
   useEffect(() => {
     let alive = true;
@@ -32,6 +39,13 @@ export function WorkspaceSwitcher({ onActive }: { onActive: (ws: WorkspaceInfo) 
 
   const active = list.find((w) => w.id === activeId);
   const pick = async (id: string) => { setOpen(false); if (id !== activeId) await selectWorkspace(id); };
+  const del = async (e: { stopPropagation: () => void }, w: WorkspaceInfo) => {
+    e.stopPropagation();
+    if (!window.confirm(`Delete workspace "${w.name}"? Its captured work is removed.`)) return;
+    await deleteWorkspace(w.id);
+    // if it was active, the server switched to default (workspace-changed → remount); else refresh the list
+    if (w.id !== activeId) await reload();
+  };
   const add = async () => {
     const name = window.prompt('New workspace name')?.trim();
     setOpen(false);
@@ -50,9 +64,14 @@ export function WorkspaceSwitcher({ onActive }: { onActive: (ws: WorkspaceInfo) 
       {open ? (
         <div className="tl-ws-menu">
           {list.map((w) => (
-            <button key={w.id} type="button" className={'tl-ws-item' + (w.id === activeId ? ' active' : '')} onClick={() => void pick(w.id)}>
-              {w.name}{w.isDefault ? ' · all' : ''}
-            </button>
+            <div key={w.id} className={'tl-ws-row' + (w.id === activeId ? ' active' : '')}>
+              <button type="button" className="tl-ws-item" onClick={() => void pick(w.id)}>
+                {w.name}{w.isDefault ? ' · all' : ''}
+              </button>
+              {w.isDefault ? null : (
+                <button type="button" className="tl-ws-del" title="Delete workspace" onClick={(e) => void del(e, w)}>×</button>
+              )}
+            </div>
           ))}
           <div className="tl-ws-sep" />
           <button type="button" className="tl-ws-item tl-ws-new" onClick={() => void add()}>+ New workspace</button>
