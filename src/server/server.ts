@@ -89,7 +89,7 @@ const desiredPort = Number(process.env.PORT ?? 5174);
 const MAX_PORT_TRIES = 30;
 function startServer(port: number, triesLeft: number): void {
   const server = serve({ fetch: app.fetch, port }, (info) => {
-    const url = `http://localhost:${info.port}`;
+    const url = `http://127.0.0.1:${info.port}`;
     if (info.port !== desiredPort) console.log(`Throughline: port ${desiredPort} busy → using ${info.port}`);
     console.log(`Throughline → ${url}  (observing ${cwd})`);
     if (process.env.OPEN !== '0' && hasUI) void open(url);
