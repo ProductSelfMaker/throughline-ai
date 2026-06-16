@@ -6,12 +6,12 @@
   "author": "ProductSelfMaker",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ProductSelfMaker/throughline.git"
+    "url": "git+https://github.com/ProductSelfMaker/throughline-ai.git"
   },
   "bugs": {
-    "url": "https://github.com/ProductSelfMaker/throughline/issues"
+    "url": "https://github.com/ProductSelfMaker/throughline-ai/issues"
   },
-  "homepage": "https://github.com/ProductSelfMaker/throughline#readme",
+  "homepage": "https://github.com/ProductSelfMaker/throughline-ai#readme",
   "type": "module",
   "keywords": [
     "claude-code",
