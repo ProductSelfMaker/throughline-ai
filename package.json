@@ -1,6 +1,6 @@
 {
   "name": "throughline-ai",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "An observer companion for Claude Code: reads your session logs + git diff and maintains a living product doc, decisions ledger, architecture, mockup, and token analytics.",
   "license": "MIT",
   "author": "ProductSelfMaker",
